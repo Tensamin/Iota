@@ -4,6 +4,19 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-tokio-tungstenite = "*"
 json = "*"
 axum = "*"
+futures-util = "*"
+
+[dependencies.tokio-tungstenite]
+version = "*"
+default-features = false
+features = ["rustls-tls-webpki-roots"]
+
+[dependencies.tokio]
+version = "*"
+features = ["full"]
+
+[dependencies.uuid]
+version = "*"
+features = ["v4"]
