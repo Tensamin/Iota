@@ -1,17 +1,23 @@
 use futures_util::{SinkExt, StreamExt};
-use tokio_tungstenite::tungstenite::Utf8Bytes;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::net::TcpStream;
 use tokio::time::{sleep, Duration};
 use tokio_tungstenite::{
-    client_async,
+    connect_async,
     tungstenite::protocol::Message,
     MaybeTlsStream,
     WebSocketStream,
 };
 use uuid::Uuid;
+use json::JsonValue;
+
+use crate::{
+    data::communication::CommunicationValue,
+    data::communication::CommunicationType,
+    data::communication::DataTypes
+};
 
 #[derive(Clone)]
 pub struct OmikronConnection {
@@ -108,8 +114,7 @@ impl OmikronConnection {
     pub async fn send_message(&self, msg: &str) {
         let mut guard = self.writer.lock().await;
         if let Some(writer) = guard.as_mut() {
-            let utf8: Utf8Bytes = Utf8Bytes::from(msg.to_string());
-            if let Err(e) = writer.send(Message::Text(utf8)).await {
+            if let Err(e) = writer.send(Message::Text(msg.to_string())).await {
                 println!("[Omikron] Send failed: {}", e);
             }
         }
@@ -130,18 +135,4 @@ impl OmikronConnection {
 
 #[tokio::main]
 async fn main() {
-    let omikron = OmikronConnection::new();
-    omikron.connect().await;
-
-    let identification = r#"{
-        "type": "identification",
-        "iota_id": "iota-12345",
-        "user_ids": ["user1", "user2"]
-    }"#;
-
-    omikron.send_message(identification).await;
-
-    loop {
-        sleep(Duration::from_secs(30)).await;
-    }
 }

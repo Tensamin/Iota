@@ -1,3 +1,4 @@
+use sysinfo::{System};
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -142,21 +143,14 @@ impl FileUtil {
     }
 
     pub fn get_used_ram() -> String {
-        // Rust has no direct Runtime like Java.
-        // As a placeholder, read process memory usage from sysinfo.
-        use sysinfo::{System, SystemExt, ProcessExt};
-
         let mut sys = System::new_all();
         sys.refresh_all();
-        if let Some(process) = sys.process(process::id() as i32) {
-            let used = process.memory() * 1024; // kB to bytes
-            let total = sys.total_memory() * 1024;
-            return format!(
-                "{}/{}",
-                Self::design_byte(used),
-                Self::design_byte(total)
-            );
-        }
-        "Unknown".to_string()
+        let used = sys.used_memory() * 1024; // kB to bytes
+        let total = sys.total_memory() * 1024;
+        format!(
+            "{}/{}",
+            Self::design_byte(used),
+            Self::design_byte(total)
+        )
     }
 }

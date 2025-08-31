@@ -7,16 +7,15 @@ edition = "2024"
 json = "*"
 axum = "*"
 futures-util = "*"
-
-[dependencies.tokio-tungstenite]
-version = "*"
-default-features = false
-features = ["rustls-tls-webpki-roots"]
-
-[dependencies.tokio]
-version = "*"
-features = ["full"]
-
-[dependencies.uuid]
-version = "*"
-features = ["v4"]
+rustls = { version = "*", default-features = false, features = ["ring"] }
+tokio-tungstenite = { version = "0.23.1", default-features = false, features = [
+    "connect",
+    "rustls-tls-webpki-roots",
+    "tokio-rustls"
+] }
+cmake = "*"
+tokio = { version = "*", features = ["full"] }
+uuid = { version = "*", features = ["v4"] }
+walkdir = "2.5.0"
+sysinfo = "*"
+serde = { version = "1.0.219", features = ["derive"] }

@@ -3,8 +3,6 @@ use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::Path;
 
-use crate::files::Files;
-
 pub struct ConfigUtil {
     pub config: JsonValue,
     pub unique: bool,
@@ -37,13 +35,12 @@ impl ConfigUtil {
     }
 
     pub fn load(&mut self) {
-        let s = Self::load_file(Files::MAIN);
+        let s = Self::load_file("config.json");
         if !s.is_empty() {
             self.config = json::parse(&s).unwrap_or(JsonValue::new_object());
         }
-        if self.config.has("port") {
-            if let Some(port) = self.config["port"].as_i32() {
-                // Set community manager port
+        if self.config.has_key("ssl_port") {
+            if let Some(port) = self.config["ssl_port"].as_i32() {
             }
         }
     }
@@ -60,6 +57,6 @@ impl ConfigUtil {
     }
 
     pub fn save(&self) -> std::io::Result<()> {
-        Self::save_file(Files::MAIN, &self.config.dump())
+        Self::save_file("config.json", &self.config.dump())
     }
 }

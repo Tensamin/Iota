@@ -1,11 +1,14 @@
-
-use json::{self, Value};
+use std::string::String;
+use json::{self, array, JsonValue};
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::Path;
+use axum::Json;
 use uuid::Uuid;
 
-use crate::users::Contact::Contact; // assuming you have a Contact struct in a module
+use crate::users::contact;
+use crate::users::contact::Contact;
+// assuming you have a Contact struct in a module
 
 pub struct ChatsUtil;
 
@@ -40,8 +43,8 @@ impl ChatsUtil {
         };
 
         for i in 0..contacts.len() {
-            if contacts[i]["userID"].as_str() == Some(&contact.user_id.to_string()) {
-                contacts.remove(i);
+            if contacts[i]["userID"].as_str() == Some(&contact.user_id.unwrap().to_string()) {
+                contacts.remove(stringify!("{}", i));
                 break;
             }
         }
@@ -62,7 +65,7 @@ impl ChatsUtil {
             for i in 0..contacts.len() {
                 if let Some(uid) = contacts[i]["userID"].as_str() {
                     if Uuid::parse_str(uid).ok()? == user_id {
-                        return Contact::from_json(&contacts[i]);
+                        return Option::from(Contact::from_json(&contacts[i]));
                     }
                 }
             }
@@ -70,7 +73,7 @@ impl ChatsUtil {
         None
     }
 
-    pub fn get_users(storage_owner: Uuid) -> Value {
+    pub fn get_users(storage_owner: Uuid) -> JsonValue {
         let dir = format!("/users/{}/contacts/", storage_owner);
         let file_name = "contacts.json";
         let s = Self::load_file(&dir, file_name);
@@ -79,9 +82,8 @@ impl ChatsUtil {
         if !s.is_empty() {
             if let Ok(contacts) = json::parse(&s) {
                 for i in 0..contacts.len() {
-                    if let Some(c) = Contact::from_json(&contacts[i]) {
-                        contacts_out.push(c.info()).unwrap();
-                    }
+                    let c = Contact::from_json(&contacts[i]);
+                    contacts_out.push(c.to_json()).unwrap();
                 }
             }
         }
