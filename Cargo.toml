@@ -8,7 +8,7 @@ json = "*"
 axum = "*"
 futures-util = "*"
 rustls = { version = "*", default-features = false, features = ["ring"] }
-tokio-tungstenite = { version = "0.23.1", default-features = false, features = [
+tokio-tungstenite = { version = "0.27.0", default-features = false, features = [
     "connect",
     "rustls-tls-webpki-roots",
     "tokio-rustls"
@@ -19,3 +19,5 @@ uuid = { version = "*", features = ["v4"] }
 walkdir = "2.5.0"
 sysinfo = "*"
 serde = { version = "1.0.219", features = ["derive"] }
+ratatui ={ version = "*", features = ["all-widgets"]}
+bytes = "*"

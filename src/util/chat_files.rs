@@ -5,7 +5,6 @@ use std::io::{Read, Write};
 use std::path::Path;
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MessageState {
     Read,
     Received,

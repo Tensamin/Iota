@@ -1,9 +1,12 @@
 use futures_util::{SinkExt, StreamExt};
+use tokio_tungstenite::tungstenite::Utf8Bytes;
 use std::collections::HashMap;
+use std::io::Bytes;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::net::TcpStream;
 use tokio::time::{sleep, Duration};
+use bytes;
 use tokio_tungstenite::{
     connect_async,
     tungstenite::protocol::Message,
@@ -111,10 +114,10 @@ impl OmikronConnection {
         });
     }
 
-    pub async fn send_message(&self, msg: &str) {
+    pub async fn send_message<'a>(&self, msg: String) {
         let mut guard = self.writer.lock().await;
         if let Some(writer) = guard.as_mut() {
-            if let Err(e) = writer.send(Message::Text(msg.to_string())).await {
+            if let Err(e) = writer.send(Message::Text(Utf8Bytes::from(msg))).await {
                 println!("[Omikron] Send failed: {}", e);
             }
         }

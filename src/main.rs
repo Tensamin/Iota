@@ -1,6 +1,5 @@
-use std::time::Duration;
-use json::{self, JsonValue};
-use tokio::time::sleep;
+use json;
+use tokio::runtime::Runtime;
 use uuid::Uuid;
 
 mod data;
@@ -8,13 +7,13 @@ mod omikron;
 mod util;
 mod users;
 
-use crate::omikron::omikronConnection::{OmikronConnection};
-use crate::data::communication::{CommunicationValue, LogLevel, LogValue, CommunicationType, DataTypes};
+use crate::omikron::omikron_connection::{OmikronConnection};
+use crate::data::communication::{CommunicationValue, CommunicationType, DataTypes};
 
 fn main() {
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    let omikron = OmikronConnection::new();
-    rt.block_on(async {
+    let runtime: Runtime = tokio::runtime::Runtime::new().unwrap();
+    let omikron: OmikronConnection = OmikronConnection::new();
+    runtime.block_on(async {
         omikron.connect().await;
 
         omikron.send_message(
@@ -26,6 +25,7 @@ fn main() {
                 .to_json()
                 .to_string()
                 .as_mut()
+                .to_string()
         ).await;
         omikron.close().await;
     });
