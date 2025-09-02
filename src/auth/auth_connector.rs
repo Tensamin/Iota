@@ -1,8 +1,8 @@
 use std::time::Duration;
 use std::collections::HashMap;
 use uuid::Uuid;
-use reqwest::blocking::{Client, Response};
-use reqwest::header::CONTENT_TYPE;
+use request::blocking::{Client, Response};
+use request::header::CONTENT_TYPE;
 use json::JsonValue;
 
 #[derive(Debug, Clone)]
