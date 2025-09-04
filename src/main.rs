@@ -6,16 +6,20 @@ mod data;
 mod omikron;
 mod util;
 mod users;
+mod gui {
+    pub mod ratatui_interface;
+}
 
 use crate::omikron::omikron_connection::{OmikronConnection};
 use crate::data::communication::{CommunicationValue, CommunicationType, DataTypes};
+use gui::{ratatui_interface};
 
 fn main() {
     let runtime: Runtime = tokio::runtime::Runtime::new().unwrap();
-    let omikron: OmikronConnection = OmikronConnection::new();
+    let mut omikron: OmikronConnection = OmikronConnection::new();
     runtime.block_on(async {
         omikron.connect().await;
-
+        
         omikron.send_message(
             CommunicationValue::new(
                 CommunicationType::Identification

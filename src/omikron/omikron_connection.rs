@@ -22,10 +22,13 @@ use crate::{
     data::communication::DataTypes
 };
 
+use crate::ratatui_interface;
+
 #[derive(Clone)]
 pub struct OmikronConnection {
     writer: Arc<Mutex<Option<futures_util::stream::SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>>>>,
     waiting: Arc<Mutex<HashMap<Uuid, Box<dyn Fn(String) + Send>>>>,
+    pub connected: bool,
 }
 
 impl OmikronConnection {
@@ -33,14 +36,17 @@ impl OmikronConnection {
         Self {
             writer: Arc::new(Mutex::new(None)),
             waiting: Arc::new(Mutex::new(HashMap::new())),
+            connected: bool::default(),
         }
     }
 
-    pub async fn connect(&self) {
+    pub async fn connect(&mut self) {
         loop {
             match connect_async("wss://tensamin.methanium.net/ws/iota/").await {
                 Ok((ws_stream, _)) => {
                     println!("[Omikron] Connected to server");
+                    self.connected = true;
+                    ratatui_interface::launch(self.connected);
 
                     // Split into writer + reader
                     let (write_half, read_half) = ws_stream.split();
