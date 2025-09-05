@@ -1,1 +1,1 @@
-pub mod omikronConnection;
+pub mod omikron_connection;

@@ -134,8 +134,8 @@ impl ChatFiles {
     pub fn get_messages(
         storage_owner: Uuid,
         external_user: Uuid,
-        loaded_messages: usize,
-        amount: usize,
+        loaded_messages: i64,
+        amount: i64,
     ) -> JsonValue {
         let user_dir = format!("users/{}/chats/{}", storage_owner, external_user);
         let path = Path::new(&user_dir);

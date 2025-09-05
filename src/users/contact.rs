@@ -58,9 +58,12 @@ impl Contact {
             about: None,
         }
     }
+    pub fn set_last_message_at(&mut self, p0: i64) {
+        self.last_message_at = Option::from(p0);
+    }
 
     pub fn to_json(&self) -> JsonValue {
-        let mut obj = self.to_json();
+        let mut obj = JsonValue::new_object();
         if let Some(id) = &self.user_id {
             obj["userID"] = JsonValue::from(id.to_string());
         }

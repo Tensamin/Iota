@@ -1,9 +1,10 @@
 use std::time::Duration;
-use std::collections::HashMap;
-use uuid::Uuid;
-use reqwest::blocking::{Client, Response};
+use uuid::{uuid, Uuid};
 use reqwest::header::CONTENT_TYPE;
 use json::JsonValue;
+use reqwest::{Client, Response};
+use crate::users::user_profile::UserProfile;
+use crate::data::communication::{CommunicationType, CommunicationValue, DataTypes};
 
 #[derive(Debug, Clone)]
 pub struct AuthUser {
@@ -29,8 +30,8 @@ impl AuthConnector {
             .unwrap()
     }
 
-    pub fn unregister_user(auth_server: &str, user_id: Uuid, reset_token: &str) -> bool {
-        let url = format!("https://{}/api/delete/{}", auth_server, user_id);
+    pub async fn unregister_user(user_id: Uuid, reset_token: &str) -> Option<bool> {
+        let url = format!("https:/auth.tensamin.methanium.net//api/delete/{}/", user_id);
         let client = Self::client();
 
         let mut payload = JsonValue::new_object();
@@ -38,64 +39,61 @@ impl AuthConnector {
 
         let res = client.post(&url)
             .header(CONTENT_TYPE, "application/json")
-            .body(payload.dump())
-            .send();
-
-        match res {
-            Ok(resp) => Self::handle_response(resp),
-            Err(_) => false,
-        }
+            .body(payload.dump()).send().await.ok()?;
+        let json = res.text().await.ok()?;
+        let cv = CommunicationValue::from_json(&json);
+        Option::from(cv.is_type(CommunicationType::Success))
+        
     }
 
-    pub fn get_uuid(auth_server: &str, username: &str) -> Option<Uuid> {
-        let url = format!("https://{}/api/get/uuid/{}", auth_server, username);
+    pub async fn get_uuid(username: &str) -> Option<Uuid> {
+        let url = format!("https://auth.tensamin.methanium.net/api/get/uuid/{}/", username);
         let client = Self::client();
-        let res = client.get(&url).send().ok()?;
-        let json = res.text().ok()?;
-
-        let cv = CommunicationValue::from_string(&json);
-        if !cv.is_success() {
+        let res = client.get(&url).send().await.ok()?;
+        let json = res.text().await.ok()?;
+        let mut cv = CommunicationValue::from_json(&json);
+        if !cv.is_type(CommunicationType::Success) {
             return None;
         }
-        cv.get_user_id()
+        Uuid::parse_str(cv.get_data(DataTypes::UserId).unwrap()).ok()
     }
-
-    pub fn get_user(auth_server: &str, user_id: Uuid) -> Option<AuthUser> {
-        let url = format!("https://{}/api/get/{}", auth_server, user_id);
+    
+    pub async fn get_user(user_id: Uuid) -> Option<AuthUser> {
+        let url = format!("https://auth.tensamin.methanium.net/api/get/{}/", user_id);
         let client = Self::client();
-        let res = client.get(&url).send().ok()?;
-        let json = res.text().ok()?;
-
-        let cv = CommunicationValue::from_string(&json);
-        if !cv.is_success() {
+        let res = client.get(&url).send().await.ok()?;
+        let json = res.text().await.ok()?;
+        
+        let mut cv = CommunicationValue::from_json(&json);
+        if cv.comm_type != CommunicationType::Success {
             return None;
         }
 
         Some(AuthUser {
-            created_at: cv.get_number("created_at")? as i64,
-            username: cv.get_string("username")?,
-            display: cv.get_string("display")?,
-            avatar: cv.get_string("avatar")?,
-            about: cv.get_string("about")?,
-            status: cv.get_string("status")?,
-            public_key: cv.get_string("public_key")?,
-            sub_level: cv.get_number("sub_level")? as i32,
-            sub_end: cv.get_number("sub_end")? as i32,
+            created_at: cv.get_data(DataTypes::CreatedAt).unwrap().to_string().parse::<i64>().unwrap_or(-1),
+            username: cv.get_data(DataTypes::Username).unwrap().to_string(),
+            display: cv.get_data(DataTypes::Display).unwrap().to_string(),
+            avatar: cv.get_data(DataTypes::Avatar).unwrap().to_string(),
+            about: cv.get_data(DataTypes::About).unwrap().to_string(),
+            status: cv.get_data(DataTypes::Status).unwrap().to_string(),
+            public_key: cv.get_data(DataTypes::PublicKey).unwrap().to_string(),
+            sub_level: cv.get_data(DataTypes::SubLevel).unwrap().to_string().parse::<i32>().unwrap_or(-1),
+            sub_end: cv.get_data(DataTypes::SubEnd).unwrap().to_string().parse::<i32>().unwrap_or(-1),
         })
     }
 
-    pub fn get_register(auth_server: &str) -> Option<Uuid> {
-        let url = format!("https://{}/api/register/init/", auth_server);
+    pub async fn get_register() -> Option<Uuid> {
+        let url = "https://auth.tensamin.methanium.net/api/register/init/".to_string();
         let client = Self::client();
-        let res = client.get(&url).send().ok()?;
-        let json = res.text().ok()?;
+        let res = client.get(&url).send().await.ok()?;
+        let json = res.text().await.ok()?;
 
-        let cv = CommunicationValue::from_string(&json);
-        cv.get_user_id()
+        let mut cv = CommunicationValue::from_json(&json);
+        Uuid::parse_str(cv.get_data(DataTypes::UserId).unwrap()).ok()
     }
 
-    pub fn complete_register(auth_server: &str, user_profile: &UserProfile, iota_id: &str) -> bool {
-        let url = format!("https://{}/api/register/complete/", auth_server);
+    pub async fn complete_register(user_profile: &UserProfile, iota_id: &str) -> bool {
+        let url = "https://auth.tensamin.methanium.net/api/register/complete/";
         let client = Self::client();
 
         let mut payload = JsonValue::new_object();
@@ -106,19 +104,24 @@ impl AuthConnector {
         payload["iota_id"] = iota_id.into();
         payload["reset_token"] = user_profile.reset_token.clone().into();
 
-        let res = client.post(&url)
+        let res = client
+            .post(url)
             .header(CONTENT_TYPE, "application/json")
             .body(payload.dump())
-            .send();
+            .send()
+            .await;
 
         match res {
-            Ok(resp) => Self::handle_response(resp),
+            Ok(resp) => Self::handle_response(resp).await,
             Err(_) => false,
         }
     }
 
-    pub fn migrate_user(auth_server: &str, user_profile: &mut UserProfile, iota_id: &str) -> bool {
-        let url = format!("https://{}/api/change/iota-id/{}", auth_server, user_profile.user_id);
+    pub async fn migrate_user(user_profile: &mut UserProfile, iota_id: &str) -> bool {
+        let url = format!(
+            "https://auth.tensamin.methanium.net/api/change/iota-id/{}",
+            user_profile.user_id
+        );
         let client = Self::client();
 
         let mut payload = JsonValue::new_object();
@@ -126,48 +129,28 @@ impl AuthConnector {
         payload["reset_token"] = user_profile.reset_token.clone().into();
         payload["new_token"] = user_profile.randomize_reset_token().into();
 
-        let res = client.post(&url)
+        let res = client
+            .post(url)
             .header(CONTENT_TYPE, "application/json")
             .body(payload.dump())
-            .send();
+            .send()
+            .await;
 
         match res {
-            Ok(resp) => Self::handle_response(resp),
+            Ok(resp) => Self::handle_response(resp).await,
             Err(_) => false,
         }
     }
 
-    fn handle_response(resp: Response) -> bool {
-        if let Ok(text) = resp.text() {
-            let cv = CommunicationValue::from_string(&text);
-            return cv.is_success();
+    async fn handle_response(resp: Response) -> bool {
+        match resp.text().await {
+            Ok(text) => {
+                let cv = CommunicationValue::from_json(&text);
+                cv.comm_type == CommunicationType::Success
+            }
+            Err(_) => false,
         }
-        false
     }
-}
 
-// --- Stubs for other modules ---
-pub struct UserProfile {
-    pub user_id: Uuid,
-    pub public_key: String,
-    pub private_key_hash: String,
-    pub username: String,
-    pub reset_token: String,
-}
-impl UserProfile {
-    pub fn randomize_reset_token(&mut self) -> String {
-        // stub: generate new token
-        let new_tok = format!("{}-new", self.reset_token);
-        self.reset_token = new_tok.clone();
-        new_tok
-    }
-}
-
-pub struct CommunicationValue;
-impl CommunicationValue {
-    pub fn from_string(s: &str) -> Self { Self }
-    pub fn is_success(&self) -> bool { true }
-    pub fn get_user_id(&self) -> Option<Uuid> { Some(Uuid::new_v4()) }
-    pub fn get_string(&self, _k: &str) -> Option<String> { Some("demo".to_string()) }
-    pub fn get_number(&self, _k: &str) -> Option<i64> { Some(123) }
+    
 }

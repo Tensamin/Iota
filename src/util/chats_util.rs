@@ -31,7 +31,7 @@ impl ChatsUtil {
         file.write_all(content.as_bytes())
     }
 
-    pub fn mod_user(storage_owner: Uuid, contact: Contact) -> std::io::Result<()> {
+    pub fn mod_user(storage_owner: Uuid, contact: &Contact){
         let dir = format!("users/{}/contacts/", storage_owner);
         let file_name = "contacts.json";
         let s = Self::load_file(&dir, file_name);
@@ -50,7 +50,7 @@ impl ChatsUtil {
         }
 
         contacts.push(contact.to_json()).unwrap();
-        Self::save_file(&dir, file_name, &contacts.dump())
+        Self::save_file(&dir, file_name, &contacts.dump());
     }
 
     pub fn get_user(storage_owner: Uuid, user_id: Uuid) -> Option<Contact> {
