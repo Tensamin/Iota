@@ -1,5 +1,6 @@
 use futures_util::{SinkExt, StreamExt};
 use std::collections::HashMap;
+use std::ptr::write;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -219,7 +220,9 @@ impl OmikronConnection {
             }
         });
     }
-
+    pub fn send_message(&self,  msg: String){
+        OmikronConnection::send_message_static(&self.writer, msg);
+    }
     pub async fn send_message_static(
         writer: &Arc<Mutex<Option<futures_util::stream::SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>>>>,
         msg: String,

@@ -1,9 +1,6 @@
 use std::time::Duration;
 use std::collections::HashMap;
 use uuid::Uuid;
-use request::blocking::{Client, Response};
-use request::header::CONTENT_TYPE;
-use uuid::{uuid, Uuid};
 use reqwest::header::CONTENT_TYPE;
 use json::JsonValue;
 use reqwest::{Client, Response};
