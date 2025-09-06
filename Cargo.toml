@@ -19,6 +19,11 @@ uuid = { version = "*", features = ["v4"] }
 walkdir = "2.5.0"
 sysinfo = "*"
 serde = { version = "1.0.219", features = ["derive"] }
+ratatui = { version = "*", features = ["all-widgets"]}
+bytes = "*"
+crossterm = "*"
+color-eyre = "*"
+sys-info = "*"
 rand = "0.8.5"
 base64 = "0.22.1"
 once_cell = "1.21.3"

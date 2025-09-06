@@ -1,4 +1,8 @@
 use std::time::Duration;
+use std::collections::HashMap;
+use uuid::Uuid;
+use request::blocking::{Client, Response};
+use request::header::CONTENT_TYPE;
 use uuid::{uuid, Uuid};
 use reqwest::header::CONTENT_TYPE;
 use json::JsonValue;
@@ -43,7 +47,7 @@ impl AuthConnector {
         let json = res.text().await.ok()?;
         let cv = CommunicationValue::from_json(&json);
         Option::from(cv.is_type(CommunicationType::Success))
-        
+
     }
 
     pub async fn get_uuid(username: &str) -> Option<Uuid> {
@@ -57,13 +61,13 @@ impl AuthConnector {
         }
         Uuid::parse_str(cv.get_data(DataTypes::UserId).unwrap()).ok()
     }
-    
+
     pub async fn get_user(user_id: Uuid) -> Option<AuthUser> {
         let url = format!("https://auth.tensamin.methanium.net/api/get/{}/", user_id);
         let client = Self::client();
         let res = client.get(&url).send().await.ok()?;
         let json = res.text().await.ok()?;
-        
+
         let mut cv = CommunicationValue::from_json(&json);
         if cv.comm_type != CommunicationType::Success {
             return None;
@@ -152,5 +156,5 @@ impl AuthConnector {
         }
     }
 
-    
+
 }
