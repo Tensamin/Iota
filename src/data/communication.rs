@@ -286,7 +286,7 @@ pub struct CommunicationValue {
     pub log_value: Option<LogValue>,
     pub sender: Option<Uuid>,
     pub receiver: Option<Uuid>,
-    pub data: HashMap<DataTypes, String>,
+    pub data: HashMap<DataTypes, JsonValue>,
 }
 
 impl CommunicationValue {
@@ -328,11 +328,15 @@ impl CommunicationValue {
     pub fn get_receiver(&self) -> Option<Uuid> {
         self.receiver.clone()
     }
-    pub fn add_data(mut self, key: DataTypes, value: String) -> Self {
+    pub fn add_data_str(mut self, key: DataTypes, value: String) -> Self {
+        self.data.insert(key, JsonValue::String(value));
+        self
+    }
+    pub fn add_data(mut self, key: DataTypes, value: JsonValue) -> Self {
         self.data.insert(key, value);
         self
     }
-    pub fn get_data(&mut self, key: DataTypes) -> Option<&String> {
+    pub fn get_data(&mut self, key: DataTypes) -> Option<&JsonValue> {
         self.data.get(&key)
     }
 
@@ -376,7 +380,7 @@ impl CommunicationValue {
         if parsed["data"].is_object() {
             for (k, v) in parsed["data"].entries() {
                 if let Some(val) = v.as_str() {
-                    data.insert(DataTypes::parse(k.to_string()), val.to_string());
+                    data.insert(DataTypes::parse(k.to_string()), v.clone());
                 }
             }
         }
@@ -394,12 +398,12 @@ impl CommunicationValue {
             .with_id(message_id);
 
         if let Some(s) = sender {
-            cv = cv.add_data(DataTypes::SenderId, s.to_string());
+            cv = cv.add_data(DataTypes::SenderId, JsonValue::String(s.to_string()));
         }
         cv
     }
     pub fn forward_to_other_iota(original: &mut CommunicationValue) -> CommunicationValue {
-        let receiver = Uuid::from_str(original.get_data(DataTypes::ReceiverId).unwrap()).ok()
+        let receiver = Uuid::from_str(&*original.get_data(DataTypes::ReceiverId).unwrap().to_string()).ok()
             .or(Option::from(Uuid::nil()));
 
         let now_ms = SystemTime::now()
@@ -410,12 +414,12 @@ impl CommunicationValue {
         let mut cv = CommunicationValue::new(CommunicationType::MessageOtherIota)
             .with_id(original.get_id())
             .with_receiver(receiver.unwrap())
-            .add_data(DataTypes::SendTime, now_ms.to_string())
-            .add_data(DataTypes::MessageContent, original.get_data(DataTypes::MessageContent).unwrap().to_string());
+            .add_data(DataTypes::SendTime, JsonValue::String(now_ms.to_string()))
+            .add_data(DataTypes::MessageContent, JsonValue::String(original.get_data(DataTypes::MessageContent).unwrap().to_string()));
 
         // include sender_id if the original had one
         if let Some(sender) = original.get_sender() {
-            cv = cv.add_data(DataTypes::SenderId, sender.to_string());
+            cv = cv.add_data(DataTypes::SenderId, JsonValue::String(sender.to_string()));
         }
         cv
     }

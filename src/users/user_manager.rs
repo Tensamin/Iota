@@ -10,6 +10,7 @@ use json::{JsonValue};
 use once_cell::sync::Lazy;
 use crate::users::user_profile::UserProfile;
 use crate::users::user_profile_full::UserProfileFull;
+use crate::util::file_util::{load_file, save_file};
 
 pub struct UserManager;
 
@@ -72,20 +73,19 @@ impl UserManager {
         let users = USERS.lock().unwrap();
         let arr: Vec<JsonValue> = users.iter().map(|u| u.to_json()).collect();
         let json_str = JsonValue::Array(arr).dump();
-        fs::write("users.json", json_str)?;
+
+        save_file("", "users.json", &json_str);
         Ok(())
     }
 
     pub async fn load_users() -> io::Result<()> {
-        let path = Path::new("users.json");
-        if !path.exists() {
-            return Ok(());
-        }
-        let content = fs::read_to_string(path)?;
+        let content = load_file("", "users.json");
         if content.trim().is_empty() {
             return Ok(());
         }
-        let parsed = json::parse(&content).map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+
+        let parsed = json::parse(&content)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
         if let JsonValue::Array(arr) = parsed {
             let mut users = USERS.lock().unwrap();
             for j in arr.iter() {

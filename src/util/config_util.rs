@@ -2,6 +2,8 @@ use json::JsonValue;
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::Path;
+use uuid::Uuid;
+use crate::util::file_util::{load_file, save_file};
 
 pub struct ConfigUtil {
     pub config: JsonValue,
@@ -16,37 +18,15 @@ impl ConfigUtil {
         }
     }
 
-    fn load_file(path: &str) -> String {
-        if let Ok(mut f) = File::open(path) {
-            let mut content = String::new();
-            let _ = f.read_to_string(&mut content);
-            content
-        } else {
-            String::new()
-        }
-    }
-
-    fn save_file(path: &str, content: &str) -> std::io::Result<()> {
-        if let Some(parent) = Path::new(path).parent() {
-            fs::create_dir_all(parent)?;
-        }
-        let mut file = File::create(path)?;
-        file.write_all(content.as_bytes())
-    }
-
     pub fn load(&mut self) {
-        let s = Self::load_file("config.json");
+        let s = load_file("", "config.json");
         if !s.is_empty() {
             self.config = json::parse(&s).unwrap_or(JsonValue::new_object());
         }
-        if self.config.has_key("ssl_port") {
-            if let Some(port) = self.config["ssl_port"].as_i32() {
-            }
-        }
     }
 
-    pub fn change(&mut self, key: &str, value: JsonValue) {
-        self.config[key] = value;
+    pub fn change(&mut self, key: &str, value: Uuid) {
+        self.config[key] = JsonValue::String(value.to_string());
         self.unique = true;
     }
 
@@ -56,7 +36,7 @@ impl ConfigUtil {
         }
     }
 
-    pub fn save(&self) -> std::io::Result<()> {
-        Self::save_file("config.json", &self.config.dump())
+    pub fn save(&self) {
+        save_file("","config.json", &self.config.to_string());
     }
 }

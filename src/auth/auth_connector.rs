@@ -56,7 +56,7 @@ impl AuthConnector {
         if !cv.is_type(CommunicationType::Success) {
             return None;
         }
-        Uuid::parse_str(cv.get_data(DataTypes::UserId).unwrap()).ok()
+        Uuid::parse_str(&*cv.get_data(DataTypes::UserId).unwrap().to_string()).ok()
     }
 
     pub async fn get_user(user_id: Uuid) -> Option<AuthUser> {
@@ -90,7 +90,7 @@ impl AuthConnector {
         let json = res.text().await.ok()?;
 
         let mut cv = CommunicationValue::from_json(&json);
-        Uuid::parse_str(cv.get_data(DataTypes::UserId).unwrap()).ok()
+        Uuid::parse_str(&*cv.get_data(DataTypes::UserId).unwrap().to_string()).ok()
     }
 
     pub async fn complete_register(user_profile: &UserProfile, iota_id: &str) -> bool {
