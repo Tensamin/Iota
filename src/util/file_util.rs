@@ -1,13 +1,14 @@
-use sysinfo::{System};
+use std::ffi::OsStr;
+use std::fmt::Write as FmtWrite;
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
-use std::ffi::OsStr;
 use std::process;
-use walkdir::WalkDir;
-use std::fmt::Write as FmtWrite;
+use std::time::SystemTime;
+use sysinfo::System;
 use uuid::Uuid;
+use walkdir::WalkDir;
+
 pub fn delete_file(path: &str, name: &str) -> bool {
     let dir = Path::new(&get_directory()).join(path);
     let file = dir.join(name);
@@ -27,7 +28,11 @@ fn delete_dir_recursive(directory: &Path) -> bool {
         return false;
     }
     if let Err(e) = fs::remove_dir_all(directory) {
-        println!("[IMPORTANT] Couldn't delete directory {}: {}", directory.display(), e);
+        println!(
+            "[IMPORTANT] Couldn't delete directory {}: {}",
+            directory.display(),
+            e
+        );
         return false;
     }
     true
@@ -78,7 +83,11 @@ pub fn save_file(path: &str, name: &str, value: &str) {
     }
 
     if let Err(e) = fs::write(&file_path, value) {
-        println!("[IMPORTANT] Couldn't write file {}: {}", file_path.display(), e);
+        println!(
+            "[IMPORTANT] Couldn't write file {}: {}",
+            file_path.display(),
+            e
+        );
     }
 }
 
@@ -100,10 +109,7 @@ pub fn get_directory_size(directory: &Path) -> u64 {
         let path = entry.path();
         if path.is_file() {
             if let Ok(metadata) = path.metadata() {
-                size += path
-                    .file_name()
-                    .unwrap_or(OsStr::new(""))
-                    .len() as u64;
+                size += path.file_name().unwrap_or(OsStr::new("")).len() as u64;
                 size += metadata.len();
             }
         }
@@ -142,9 +148,5 @@ pub fn get_used_ram() -> String {
     sys.refresh_all();
     let used = sys.used_memory() * 1024; // kB to bytes
     let total = sys.total_memory() * 1024;
-    format!(
-        "{}/{}",
-        design_byte(used),
-        design_byte(total)
-    )
+    format!("{}/{}", design_byte(used), design_byte(total))
 }

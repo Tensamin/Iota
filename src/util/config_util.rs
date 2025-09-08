@@ -1,9 +1,8 @@
+use crate::util::file_util::{load_file, save_file};
 use json::JsonValue;
 use std::fs::{self, File};
-use std::io::{Read, Write};
 use std::path::Path;
 use uuid::Uuid;
-use crate::util::file_util::{load_file, save_file};
 
 pub struct ConfigUtil {
     pub config: JsonValue,
@@ -37,6 +36,6 @@ impl ConfigUtil {
     }
 
     pub fn save(&self) {
-        save_file("","config.json", &self.config.to_string());
+        save_file("", "config.json", &self.config.to_string());
     }
 }
