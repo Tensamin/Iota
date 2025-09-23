@@ -1,15 +1,15 @@
-use std::fs;
-use std::sync::Mutex;
-use std::collections::HashMap;
-use std::io;
-use std::path::Path;
-use uuid::Uuid;
+use crate::auth::auth_connector::AuthConnector;
+use crate::users::user_manager::UserManager;
+use base64::{Engine as _, engine::general_purpose};
+use json::{JsonValue, object, stringify};
 use rand::Rng;
 use rand::rngs::OsRng;
-use base64::{engine::general_purpose, Engine as _};
-use json::{JsonValue, object, stringify};
-use crate::users::user_manager::UserManager;
-use crate::auth::auth_connector::AuthConnector;
+use std::collections::HashMap;
+use std::fs;
+use std::io;
+use std::path::Path;
+use std::sync::Mutex;
+use uuid::Uuid;
 
 // --- UserProfile ---
 #[derive(Clone, Debug)]
@@ -43,34 +43,42 @@ impl UserProfile {
 
     pub fn to_json(&self) -> JsonValue {
         let mut obj = object! {
-            "UUID" => self.user_id.to_string(),
+            "uuid" => self.user_id.to_string(),
             "username" => self.username.clone(),
-            "publicKey" => self.public_key.clone(),
-            "privateKeyHash" => self.private_key_hash.clone(),
-            "resetToken" => self.reset_token.clone()
+            "public_key" => self.public_key.clone(),
+            "private_key_hash" => self.private_key_hash.clone(),
+            "reset_token" => self.reset_token.clone()
         };
         if let Some(d) = &self.display_name {
-            obj["displayName"] = d.clone().into();
+            obj["display_name"] = d.clone().into();
         }
         obj
     }
 
     pub async fn from_json(j: &JsonValue) -> Option<Self> {
-        let uuid = Uuid::parse_str(j["UUID"].as_str()?).ok()?;
+        let uuid = Uuid::parse_str(j["uuid"].as_str()?).ok()?;
         let username = j["username"].as_str()?.to_string();
-        let public_key = j["publicKey"].as_str()?.to_string();
-        let private_key_hash = j["privateKeyHash"].as_str()?.to_string();
-        let reset_token = j["resetToken"].as_str()?.to_string();
-        let display_name = j["displayName"].as_str().map(|s| s.to_string());
+        let public_key = j["public_key"].as_str()?.to_string();
+        let private_key_hash = j["private_key_hash"].as_str()?.to_string();
+        let reset_token = j["reset_token"].as_str()?.to_string();
+        let display_name = j["display_name"].as_str().map(|s| s.to_string());
 
-        let mut up = UserProfile::new(uuid, username, display_name, public_key, private_key_hash, reset_token);
+        let mut up = UserProfile::new(
+            uuid,
+            username,
+            display_name,
+            public_key,
+            private_key_hash,
+            reset_token,
+        );
 
         // Migration hook (stubbed, since AuthConnector isn’t implemented here)
-        if j.has_key("migrate") 
-        || j.has_key("migrating") 
-        || j.has_key("changing") 
-        || j.has_key("move") 
-        || j.has_key("moving") {
+        if j.has_key("migrate")
+            || j.has_key("migrating")
+            || j.has_key("changing")
+            || j.has_key("move")
+            || j.has_key("moving")
+        {
             if AuthConnector::migrate_user(&mut up, stringify!("{}", Uuid::new_v4())).await {
                 println!("[INFO] Migration triggered for {}", up.username);
                 UserManager::set_unique(true);
@@ -90,6 +98,8 @@ impl UserProfile {
     }
 
     pub fn get_display_name(&self) -> String {
-        self.display_name.clone().unwrap_or_else(|| self.username.clone())
+        self.display_name
+            .clone()
+            .unwrap_or_else(|| self.username.clone())
     }
 }

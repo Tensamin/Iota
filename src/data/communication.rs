@@ -1,15 +1,17 @@
+use axum::Json;
+use json::number::Number;
+use json::{JsonValue, object, parse, stringify};
 use std::any::Any;
-use json::{object, parse, stringify, JsonValue};
 use std::collections::HashMap;
+use std::env::VarsOs;
 use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
-use axum::Json;
 use uuid::Uuid;
 
 #[derive(Eq, Hash, PartialEq, Debug)]
 pub enum DataTypes {
-    ErrorType,               
-    ChatPartnerId,           
+    ErrorType,
+    ChatPartnerId,
     IotaId,
     UserId,
     UserIds,
@@ -81,71 +83,71 @@ impl DataTypes {
         let normalized = p0.to_lowercase().replace('_', "");
 
         match normalized.as_str() {
-            "errortype"        => DataTypes::ErrorType,
-            "chatpartnerid"    => DataTypes::ChatPartnerId,
-            "iotaid"           => DataTypes::IotaId,
-            "userid"           => DataTypes::UserId,
-            "userids"          => DataTypes::UserIds,
-            "userstate"        => DataTypes::UserState,
-            "userstates"       => DataTypes::UserStates,
-            "userpings"        => DataTypes::UserPings,
-            "callstate"        => DataTypes::CallState,
-            "screenshare"      => DataTypes::ScreenShare,
-            "privatekeyhash"   => DataTypes::PrivateKeyHash,
-            "accepted"         => DataTypes::Accepted,
+            "errortype" => DataTypes::ErrorType,
+            "chatpartnerid" => DataTypes::ChatPartnerId,
+            "iotaid" => DataTypes::IotaId,
+            "userid" => DataTypes::UserId,
+            "userids" => DataTypes::UserIds,
+            "userstate" => DataTypes::UserState,
+            "userstates" => DataTypes::UserStates,
+            "userpings" => DataTypes::UserPings,
+            "callstate" => DataTypes::CallState,
+            "screenshare" => DataTypes::ScreenShare,
+            "privatekeyhash" => DataTypes::PrivateKeyHash,
+            "accepted" => DataTypes::Accepted,
             "acceptedprofiles" => DataTypes::AcceptedProfiles,
-            "deniedprofiles"   => DataTypes::DeniedProfiles,
-            "messagecontent"   => DataTypes::MessageContent,
-            "messagechunk"     => DataTypes::MessageChunk,
-            "sendtime"         => DataTypes::SendTime,
-            "gettime"          => DataTypes::GetTime,
-            "getvariant"       => DataTypes::GetVariant,
-            "sharedsecretown"  => DataTypes::SharedSecretOwn,
-            "sharedsecretother"=> DataTypes::SharedSecretOther,
+            "deniedprofiles" => DataTypes::DeniedProfiles,
+            "messagecontent" => DataTypes::MessageContent,
+            "messagechunk" => DataTypes::MessageChunk,
+            "sendtime" => DataTypes::SendTime,
+            "gettime" => DataTypes::GetTime,
+            "getvariant" => DataTypes::GetVariant,
+            "sharedsecretown" => DataTypes::SharedSecretOwn,
+            "sharedsecretother" => DataTypes::SharedSecretOther,
             "sharedsecretsign" => DataTypes::SharedSecretSign,
-            "sharedsecret"     => DataTypes::SharedSecret,
-            "callid"           => DataTypes::CallId,
-            "callname"         => DataTypes::CallName,
-            "callsecretsha"    => DataTypes::CallSecretSha,
-            "callsecret"       => DataTypes::CallSecret,
+            "sharedsecret" => DataTypes::SharedSecret,
+            "callid" => DataTypes::CallId,
+            "callname" => DataTypes::CallName,
+            "callsecretsha" => DataTypes::CallSecretSha,
+            "callsecret" => DataTypes::CallSecret,
             "sharedcallsecret" => DataTypes::SharedCallSecret,
-            "startdate"        => DataTypes::StartDate,
-            "enddate"          => DataTypes::EndDate,
-            "receiverid"       => DataTypes::ReceiverId,
-            "senderid"         => DataTypes::SenderId,
-            "signature"        => DataTypes::Signature,
-            "signed"           => DataTypes::Signed,
-            "message"          => DataTypes::Message,
-            "lastping"         => DataTypes::LastPing,
-            "pingiota"         => DataTypes::PingIota,
-            "pingclients"      => DataTypes::PingClients,
-            "matches"          => DataTypes::Matches,
-            "omikron"          => DataTypes::Omikron,
-            "loadedmessages"   => DataTypes::LoadedMessages,
-            "messageamount"    => DataTypes::MessageAmount,
-            "position"         => DataTypes::Position,
-            "name"             => DataTypes::Name,
-            "path"             => DataTypes::Path,
-            "codec"            => DataTypes::Codec,
-            "function"         => DataTypes::Function,
-            "payload"          => DataTypes::Payload,
-            "result"           => DataTypes::Result,
-            "interactables"    => DataTypes::Interactables,
-            "wanttowatch"      => DataTypes::WantToWatch,
-            "watcher"          => DataTypes::Watcher,
-            "createdat"        => DataTypes::CreatedAt,
-            "username"         => DataTypes::Username,
-            "display"          => DataTypes::Display,
-            "avatar"           => DataTypes::Avatar,
-            "about"            => DataTypes::About,
-            "status"           => DataTypes::Status,
-            "publickey"        => DataTypes::PublicKey,
-            "sublevel"         => DataTypes::SubLevel,
-            "subend"           => DataTypes::SubEnd,
+            "startdate" => DataTypes::StartDate,
+            "enddate" => DataTypes::EndDate,
+            "receiverid" => DataTypes::ReceiverId,
+            "senderid" => DataTypes::SenderId,
+            "signature" => DataTypes::Signature,
+            "signed" => DataTypes::Signed,
+            "message" => DataTypes::Message,
+            "lastping" => DataTypes::LastPing,
+            "pingiota" => DataTypes::PingIota,
+            "pingclients" => DataTypes::PingClients,
+            "matches" => DataTypes::Matches,
+            "omikron" => DataTypes::Omikron,
+            "loadedmessages" => DataTypes::LoadedMessages,
+            "messageamount" => DataTypes::MessageAmount,
+            "position" => DataTypes::Position,
+            "name" => DataTypes::Name,
+            "path" => DataTypes::Path,
+            "codec" => DataTypes::Codec,
+            "function" => DataTypes::Function,
+            "payload" => DataTypes::Payload,
+            "result" => DataTypes::Result,
+            "interactables" => DataTypes::Interactables,
+            "wanttowatch" => DataTypes::WantToWatch,
+            "watcher" => DataTypes::Watcher,
+            "createdat" => DataTypes::CreatedAt,
+            "username" => DataTypes::Username,
+            "display" => DataTypes::Display,
+            "avatar" => DataTypes::Avatar,
+            "about" => DataTypes::About,
+            "status" => DataTypes::Status,
+            "publickey" => DataTypes::PublicKey,
+            "sublevel" => DataTypes::SubLevel,
+            "subend" => DataTypes::SubEnd,
             "communityaddress" => DataTypes::CommunityAddress,
-            "challenge"        => DataTypes::Challenge,
-            "communitytitle"   => DataTypes::CommunityTitle,
-            "communities"      => DataTypes::Communities,
+            "challenge" => DataTypes::Challenge,
+            "communitytitle" => DataTypes::CommunityTitle,
+            "communities" => DataTypes::Communities,
             _ => DataTypes::ErrorType, // fallback if unknown
         }
     }
@@ -153,7 +155,7 @@ impl DataTypes {
 
 #[derive(PartialEq, Debug)]
 pub enum CommunicationType {
-Error,
+    Error,
     Success,
     Message,
     MessageLive,
@@ -284,8 +286,8 @@ pub struct CommunicationValue {
     pub id: Uuid,
     pub comm_type: CommunicationType,
     pub log_value: Option<LogValue>,
-    pub sender: Option<Uuid>,
-    pub receiver: Option<Uuid>,
+    pub sender: Uuid,
+    pub receiver: Uuid,
     pub data: HashMap<DataTypes, JsonValue>,
 }
 
@@ -295,16 +297,16 @@ impl CommunicationValue {
             id: Uuid::new_v4(),
             comm_type,
             log_value: None,
-            sender: None,
-            receiver: None,
+            sender: Uuid::new_v4(),
+            receiver: Uuid::new_v4(),
             data: HashMap::new(),
         }
     }
-    pub fn with_id(mut self, p0: Uuid) -> Self{
+    pub fn with_id(mut self, p0: Uuid) -> Self {
         self.id = p0;
         self
     }
-    pub fn get_id(&self) -> Uuid{
+    pub fn get_id(&self) -> Uuid {
         self.id.clone()
     }
     pub fn with_log(mut self, log: LogValue) -> Self {
@@ -315,18 +317,22 @@ impl CommunicationValue {
         &self.log_value
     }
     pub fn with_sender(mut self, sender: Uuid) -> Self {
-        self.sender = Some(sender);
+        self.sender = sender;
         self
     }
-    pub fn get_sender(&self) -> Option<Uuid> {
+    pub fn get_sender(&self) -> Uuid {
         self.sender.clone()
     }
     pub fn with_receiver(mut self, receiver: Uuid) -> Self {
-        self.receiver = Some(receiver);
+        self.receiver = receiver;
         self
     }
-    pub fn get_receiver(&self) -> Option<Uuid> {
+    pub fn get_receiver(&self) -> Uuid {
         self.receiver.clone()
+    }
+    pub fn add_data_num(mut self, key: DataTypes, value: Number) -> Self {
+        self.data.insert(key, JsonValue::Number(value));
+        self
     }
     pub fn add_data_str(mut self, key: DataTypes, value: String) -> Self {
         self.data.insert(key, JsonValue::String(value));
@@ -344,7 +350,7 @@ impl CommunicationValue {
         self.comm_type == p0
     }
     pub fn to_json(&self) -> JsonValue {
-        let mut jdata = object!{};
+        let mut jdata = object! {};
         for (k, v) in &self.data {
             jdata[&format!("{:?}", k)] = JsonValue::from(v.clone());
         }
@@ -352,20 +358,26 @@ impl CommunicationValue {
         object! {
             id: self.id.to_string(),
             type: format!("{:?}", self.comm_type),
-            sender: self.sender.map(|u| u.to_string()).unwrap_or_default(),
-            receiver: self.receiver.map(|u| u.to_string()).unwrap_or_default(),
+            sender: self.sender.to_string(),
+            receiver: self.receiver.to_string(),
             log: self.log_value.as_ref().map(|l| l.clone().to_json()).unwrap_or(JsonValue::Null),
             data: jdata
         }
     }
- 
+
     pub fn from_json(json_str: &str) -> Self {
         let parsed = parse(json_str).unwrap();
 
         let comm_type = CommunicationType::parse(parsed["type"].to_string());
 
-        let sender = parsed["sender"].as_str().and_then(|s| Uuid::parse_str(s).ok());
-        let receiver = parsed["receiver"].as_str().and_then(|s| Uuid::parse_str(s).ok());
+        let sender: Uuid = parsed["sender"]
+            .as_str()
+            .and_then(|s| Uuid::parse_str(s).ok())
+            .unwrap_or(Uuid::new_v4());
+        let receiver: Uuid = parsed["receiver"]
+            .as_str()
+            .and_then(|s| Uuid::parse_str(s).ok())
+            .unwrap_or(Uuid::new_v4());
 
         let log_value = if parsed["log"].is_object() {
             Some(LogValue::new(
@@ -393,34 +405,45 @@ impl CommunicationValue {
             data,
         }
     }
-    pub fn ack_message(message_id: Uuid, sender: Option<Uuid>) -> CommunicationValue {
-        let mut cv = CommunicationValue::new(CommunicationType::Message)
-            .with_id(message_id);
+    pub fn ack_message(message_id: Uuid, sender: Uuid) -> CommunicationValue {
+        let mut cv = CommunicationValue::new(CommunicationType::Message).with_id(message_id);
 
-        if let Some(s) = sender {
+        if let s = sender {
             cv = cv.add_data(DataTypes::SenderId, JsonValue::String(s.to_string()));
         }
         cv
     }
     pub fn forward_to_other_iota(original: &mut CommunicationValue) -> CommunicationValue {
-        let receiver = Uuid::from_str(&*original.get_data(DataTypes::ReceiverId).unwrap().to_string()).ok()
-            .or(Option::from(Uuid::nil()));
+        let receiver = Uuid::from_str(
+            &*original
+                .get_data(DataTypes::ReceiverId)
+                .unwrap()
+                .to_string(),
+        )
+        .ok()
+        .or(Option::from(Uuid::nil()));
 
         let now_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_millis() as i64;
 
-        let mut cv = CommunicationValue::new(CommunicationType::MessageOtherIota)
+        let cv = CommunicationValue::new(CommunicationType::MessageOtherIota)
             .with_id(original.get_id())
             .with_receiver(receiver.unwrap())
             .add_data(DataTypes::SendTime, JsonValue::String(now_ms.to_string()))
-            .add_data(DataTypes::MessageContent, JsonValue::String(original.get_data(DataTypes::MessageContent).unwrap().to_string()));
+            .add_data(
+                DataTypes::MessageContent,
+                JsonValue::String(
+                    original
+                        .get_data(DataTypes::MessageContent)
+                        .unwrap()
+                        .to_string(),
+                ),
+            );
 
         // include sender_id if the original had one
-        if let Some(sender) = original.get_sender() {
-            cv = cv.add_data(DataTypes::SenderId, JsonValue::String(sender.to_string()));
-        }
-        cv
+        let sender = original.get_sender();
+        cv.add_data(DataTypes::SenderId, JsonValue::String(sender.to_string()))
     }
 }

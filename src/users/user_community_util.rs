@@ -6,12 +6,7 @@ use uuid::Uuid;
 pub struct UserCommunityUtil;
 
 impl UserCommunityUtil {
-    pub fn add_community(
-        storage_owner: Uuid,
-        address: String,
-        title: String,
-        position: String,
-    ) {
+    pub fn add_community(storage_owner: Uuid, address: String, title: String, position: String) {
         let path = format!("users/{}/communities.json", storage_owner);
         let mut communities: JsonValue = Self::load_array(&path);
 
@@ -58,7 +53,7 @@ impl UserCommunityUtil {
         if let Some(parent) = Path::new(path).parent() {
             let _ = fs::create_dir_all(parent);
         }
-        
+
         let _ = fs::write(path, arr.pretty(3));
     }
 }

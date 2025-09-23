@@ -1,8 +1,12 @@
 use crate::util::file_util::{load_file, save_file};
 use json::JsonValue;
+use once_cell::sync::Lazy;
 use std::fs::{self, File};
 use std::path::Path;
+use std::sync::Mutex;
 use uuid::Uuid;
+
+pub static CONFIG: Lazy<Mutex<ConfigUtil>> = Lazy::new(|| Mutex::new(ConfigUtil::new()));
 
 pub struct ConfigUtil {
     pub config: JsonValue,
@@ -22,6 +26,14 @@ impl ConfigUtil {
         if !s.is_empty() {
             self.config = json::parse(&s).unwrap_or(JsonValue::new_object());
         }
+    }
+
+    pub fn get_iota_id(&self) -> Uuid {
+        self.config["iota_id"]
+            .as_str()
+            .unwrap_or_default()
+            .parse()
+            .unwrap_or_default()
     }
 
     pub fn change(&mut self, key: &str, value: Uuid) {

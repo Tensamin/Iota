@@ -14,11 +14,11 @@ pub struct Contact {
 #[derive(Debug, Clone)]
 pub enum UserStatus {
     Online,
-    DoNotDisturb,
+    Do_Not_Disturb,
     WC,
     Away,
-    UserOffline,
-    IotaOffline,
+    User_Offline,
+    Iota_Offline,
 }
 
 impl Default for Contact {
@@ -31,7 +31,7 @@ impl Default for Contact {
             user_id: None,
             user_name: None,
             last_message_at: Some(now),
-            user_status: UserStatus::UserOffline,
+            user_status: UserStatus::User_Offline,
             about: None,
         }
     }
@@ -43,7 +43,7 @@ impl Contact {
             user_id: Some(user_id),
             user_name: None,
             last_message_at: Some(last_message_at),
-            user_status: UserStatus::UserOffline,
+            user_status: UserStatus::User_Offline,
             about: None,
         }
     }
@@ -53,7 +53,7 @@ impl Contact {
             user_id: Some(user_id),
             user_name: None,
             last_message_at: None,
-            user_status: UserStatus::UserOffline,
+            user_status: UserStatus::User_Offline,
             about: None,
         }
     }
@@ -64,13 +64,13 @@ impl Contact {
     pub fn to_json(&self) -> JsonValue {
         let mut obj = JsonValue::new_object();
         if let Some(id) = &self.user_id {
-            obj["userID"] = JsonValue::from(id.to_string());
+            obj["user_id"] = JsonValue::from(id.to_string());
         }
         if let Some(name) = &self.user_name {
-            obj["userName"] = JsonValue::from(name.as_str());
+            obj["user_name"] = JsonValue::from(name.as_str());
         }
         if let Some(ts) = &self.last_message_at {
-            obj["lastMessageAt"] = JsonValue::from(ts.to_string());
+            obj["last_message_at"] = JsonValue::from(ts.to_string());
         }
         obj
     }
@@ -81,29 +81,27 @@ impl Contact {
     }
 
     pub fn from_json(o: &JsonValue) -> Contact {
-        let user_id = o["userID"]
-            .as_str()
-            .and_then(|s| Uuid::parse_str(s).ok());
+        let user_id = o["user_id"].as_str().and_then(|s| Uuid::parse_str(s).ok());
 
-        let user_name = o["userName"].as_str().map(|s| s.to_string());
+        let user_name = o["user_name"].as_str().map(|s| s.to_string());
 
-        let last_message_at = o["lastMessageAt"].as_i64();
+        let last_message_at = o["last_message_at"].as_i64();
 
         Contact {
             user_id,
             user_name,
             last_message_at,
-            user_status: UserStatus::UserOffline, // default
+            user_status: UserStatus::User_Offline, // default
             about: None,
         }
     }
     pub fn info(&self) -> JsonValue {
         let mut obj = self.to_json();
         if let Some(id) = &self.user_id {
-            obj["userID"] = JsonValue::from(id.to_string());
+            obj["user_id"] = JsonValue::from(id.to_string());
         }
         if let Some(name) = &self.user_name {
-            obj["userName"] = JsonValue::from(name.as_str());
+            obj["user_name"] = JsonValue::from(name.as_str());
         }
         obj
     }

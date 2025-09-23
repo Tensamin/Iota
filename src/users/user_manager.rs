@@ -1,16 +1,26 @@
-use std::fs;
-use std::sync::Mutex;
-use std::io;
-use std::path::Path;
-use uuid::Uuid;
-use rand::Rng;
-use rand::rngs::OsRng;
-use base64::{engine::general_purpose, Engine as _};
-use json::{JsonValue};
-use once_cell::sync::Lazy;
+use crate::auth::auth_connector::AuthConnector;
 use crate::users::user_profile::UserProfile;
 use crate::users::user_profile_full::UserProfileFull;
+use crate::util::config_util::CONFIG;
 use crate::util::file_util::{load_file, save_file};
+use base64::{Engine as _, engine::general_purpose};
+use der::DerOrd;
+use hex;
+use json::JsonValue;
+use once_cell::sync::Lazy;
+use pkcs8::EncodePublicKey;
+use pkcs8::spki::SubjectPublicKeyInfoOwned;
+use pkcs8::{ObjectIdentifier, PrivateKeyInfo, SubjectPublicKeyInfo, der::Encode};
+use rand::Rng;
+use rand_core::OsRng;
+use rand_core::RngCore;
+use rustls::pki_types::SubjectPublicKeyInfoDer;
+use sha2::{Digest, Sha256};
+use std::io;
+use std::sync::Mutex;
+use uuid::Uuid;
+use x448::{PublicKey, Secret};
+use x509::AlgorithmIdentifier;
 
 pub struct UserManager;
 
@@ -18,14 +28,22 @@ static USERS: Lazy<Mutex<Vec<UserProfile>>> = Lazy::new(|| Mutex::new(Vec::new()
 static UNIQUE: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 
 impl UserManager {
-    pub fn create_user(username: &str) -> Option<UserProfileFull> {
-        // Stub: normally AuthConnector.getRegister() returns a UUID
-        let user_id = Uuid::new_v4();
+    pub async fn create_user(username: &str) -> Option<UserProfileFull> {
+        let user_id = AuthConnector::get_register().await.unwrap();
+        let mut buf = [0u8; 56];
+        let mut rng = OsRng;
+        rng.fill_bytes(&mut buf);
+        let private_key = Secret::from_bytes(&buf).unwrap();
+        let public_key = PublicKey::from(&private_key);
 
-        // Stubbed: CryptoHelper.generateKeyPair()
-        let public_key = general_purpose::STANDARD.encode(b"dummy-public");
-        let private_key = general_purpose::STANDARD.encode(b"dummy-private");
-        let private_key_hash = format!("hash-{}", &private_key);
+        let mut hasher = Sha256::new();
+        hasher.update(
+            &general_purpose::STANDARD
+                .encode(&private_key.as_bytes())
+                .as_bytes(),
+        );
+        let result = hasher.finalize();
+        let private_key_hash = hex::encode(result);
 
         let mut bytes = [0u8; 192];
         OsRng.fill(bytes.as_mut());
@@ -35,12 +53,27 @@ impl UserManager {
             user_id,
             username.to_string(),
             None,
-            public_key,
+            general_purpose::STANDARD.encode(&public_key.as_bytes()),
             private_key_hash,
             reset_token,
         );
 
-        let up_full = UserProfileFull { user_profile: up.clone(), private_key };
+        let up_full = UserProfileFull {
+            user_profile: up.clone(),
+            private_key: general_purpose::STANDARD.encode(&private_key.as_bytes()),
+        };
+
+        AuthConnector::complete_register(&up, &CONFIG.lock().unwrap().get_iota_id().to_string())
+            .await;
+        save_file(
+            "",
+            &format!("{}.tu", username),
+            &format!(
+                "{}::{}",
+                user_id,
+                general_purpose::STANDARD.encode(&private_key.as_bytes())
+            ),
+        );
 
         USERS.lock().unwrap().push(up);
         Self::save_users().ok();
@@ -48,7 +81,12 @@ impl UserManager {
     }
 
     pub fn get_user(user_id: Uuid) -> Option<UserProfile> {
-        USERS.lock().unwrap().iter().cloned().find(|u| u.user_id == user_id)
+        USERS
+            .lock()
+            .unwrap()
+            .iter()
+            .cloned()
+            .find(|u| u.user_id == user_id)
     }
 
     pub fn get_users() -> Vec<UserProfile> {

@@ -18,8 +18,8 @@ pub fn mod_user(storage_owner: Uuid, contact: &Contact) {
     };
 
     for i in 0..contacts.len() {
-        if contacts[i]["userID"].as_str() == Some(&contact.user_id.unwrap().to_string()) {
-            contacts.remove(stringify!("{}", i));
+        if contacts[i]["user_id"].as_str() == Some(&contact.user_id.unwrap().to_string()) {
+            contacts.array_remove(i);
             break;
         }
     }
@@ -37,7 +37,7 @@ pub fn get_user(storage_owner: Uuid, user_id: Uuid) -> Option<Contact> {
 
     if let Ok(contacts) = json::parse(&s) {
         for i in 0..contacts.len() {
-            if let Some(uid) = contacts[i]["userID"].as_str() {
+            if let Some(uid) = contacts[i]["user_id"].as_str() {
                 if Uuid::parse_str(uid).ok()? == user_id {
                     return Option::from(Contact::from_json(&contacts[i]));
                 }
