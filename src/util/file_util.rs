@@ -91,6 +91,19 @@ pub fn save_file(path: &str, name: &str, value: &str) {
     }
 }
 
+pub fn get_children(path: &str) -> Vec<String> {
+    let dir = Path::new(&get_directory()).join(path);
+    let mut children = Vec::new();
+    if let Ok(entries) = fs::read_dir(&dir) {
+        for entry in entries {
+            if let Ok(entry) = entry {
+                children.push(entry.file_name().to_string_lossy().to_string());
+            }
+        }
+    }
+    children
+}
+
 pub fn get_directory() -> String {
     let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("."));
     exe.parent()

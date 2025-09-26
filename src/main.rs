@@ -45,6 +45,9 @@ async fn main() {
     //    return;
     //}
 
+    // UI
+    gui::ratatui_interface::launch(false);
+
     // LANGUAGE PACK
     language_creator::create_languages();
 
@@ -62,7 +65,10 @@ async fn main() {
     for up in UserManager::get_users() {
         sb = sb + "," + &up.user_id.to_string().as_str();
     }
-    sb.remove(0);
+
+    if !sb.is_empty() {
+        sb.remove(0);
+    }
     println!(
         "IOTA ID: {}-####-####-####-############",
         CONFIG

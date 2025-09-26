@@ -116,6 +116,7 @@ impl OmikronConnection {
                         if cv.is_type(CommunicationType::MessageOtherIota) {
                             let sender_id = &cv.get_sender();
                             let receiver_id = &cv.get_receiver();
+
                             ChatFiles::add_message(
                                 cv.get_data(DataTypes::SendTime)
                                     .unwrap()
@@ -128,6 +129,9 @@ impl OmikronConnection {
                                     .unwrap()
                                     .as_str()
                                     .unwrap(),
+                                false,
+                                false,
+                                0,
                             );
                             let response = CommunicationValue::new(CommunicationType::MessageLive)
                                 .with_id(cv.get_id())
@@ -153,6 +157,24 @@ impl OmikronConnection {
                         }
 
                         if cv.is_type(CommunicationType::Message) {
+                            /*
+                            "user": {
+                                "avatar": true,
+                                "display": true,
+                                "timestamp": true
+                            },
+                            "body": {
+                                "tint": "<hex color>",
+                                "content": "<markdown (encrypted)>",
+                                "files": [
+                                    {
+                                        "name": "<cool name>",
+                                        "id": "<uuid>",
+                                        "type": "[ image | image_top_right | file ]"
+                                    }
+                                ]
+                            }
+                            */
                             let my_id = cv.get_sender();
                             ChatFiles::add_message(
                                 SystemTime::now()
@@ -166,6 +188,9 @@ impl OmikronConnection {
                                 )
                                 .unwrap(),
                                 &*cv.get_data(DataTypes::MessageContent).unwrap().to_string(),
+                                false,
+                                false,
+                                0,
                             );
                             // ack
                             let ack = CommunicationValue::ack_message(cv.get_id(), my_id);

@@ -1,5 +1,5 @@
-
-use json::{self, array, object, JsonValue};
+use json::{self, JsonValue, array, object};
+use sha2::digest::typenum::Add1;
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::Path;
@@ -43,13 +43,15 @@ impl ChatFiles {
         let mut file = File::create(path)?;
         file.write_all(content.as_bytes())
     }
-
     pub fn add_message(
         send_time: i64,
         storage_owner_is_sender: bool,
         storage_owner: Uuid,
         external_user: Uuid,
         message: &str,
+        avatar: bool,
+        timestamp: bool,
+        tint: i64,
     ) -> std::io::Result<()> {
         let user_dir = format!("users/{}/chats/{}", storage_owner, external_user);
 
@@ -82,7 +84,11 @@ impl ChatFiles {
         };
         message_chunk.push(json_obj).unwrap();
 
-        Self::save_file(&user_dir, &format!("msgs_{}.json", chunk_index), &message_chunk.dump())
+        Self::save_file(
+            &user_dir,
+            &format!("msgs_{}.json", chunk_index),
+            &message_chunk.dump(),
+        )
     }
 
     pub fn change_message_state(
@@ -197,15 +203,4 @@ impl ChatFiles {
 
         messages
     }
-}
-
-fn main() {
-    let owner = Uuid::new_v4();
-    let external = Uuid::new_v4();
-
-    ChatFiles::add_message(1234567890, true, owner, external, "Hello!").unwrap();
-    ChatFiles::change_message_state(owner, external, 1234567890, MessageState::Read).unwrap();
-    let msgs = ChatFiles::get_messages(owner, external, 0, 10);
-
-    println!("Messages: {}", msgs.dump());
 }
