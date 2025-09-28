@@ -17,7 +17,7 @@ cmake = "*"
 tokio = { version = "*", features = ["full"] }
 uuid = { version = "*", features = ["v4"] }
 walkdir = "2.5.0"
-sysinfo = "*"
+sysinfo = "0.30"
 serde = { version = "1.0.219", features = ["derive"] }
 ratatui = { version = "*", features = ["all-widgets"]}
 bytes = "*"

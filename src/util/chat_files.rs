@@ -37,11 +37,11 @@ impl ChatFiles {
         }
     }
 
-    fn save_file(dir: &str, file_name: &str, content: &str) -> std::io::Result<()> {
-        fs::create_dir_all(dir)?;
+    fn save_file(dir: &str, file_name: &str, content: &str) {
+        fs::create_dir_all(dir);
         let path = Path::new(dir).join(file_name);
-        let mut file = File::create(path)?;
-        file.write_all(content.as_bytes())
+        let mut file = File::create(path).unwrap();
+        file.write_all(content.as_bytes());
     }
     pub fn add_message(
         send_time: i64,
@@ -49,10 +49,7 @@ impl ChatFiles {
         storage_owner: Uuid,
         external_user: Uuid,
         message: &str,
-        avatar: bool,
-        timestamp: bool,
-        tint: i64,
-    ) -> std::io::Result<()> {
+    ) {
         let user_dir = format!("users/{}/chats/{}", storage_owner, external_user);
 
         let mut chunk_index = 0;
@@ -88,7 +85,7 @@ impl ChatFiles {
             &user_dir,
             &format!("msgs_{}.json", chunk_index),
             &message_chunk.dump(),
-        )
+        );
     }
 
     pub fn change_message_state(
@@ -127,7 +124,7 @@ impl ChatFiles {
                     }
 
                     if modified {
-                        Self::save_file(&user_dir, &fname_str, &chunk.dump())?;
+                        Self::save_file(&user_dir, &fname_str, &chunk.dump());
                         break;
                     }
                 }

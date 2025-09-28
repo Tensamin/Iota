@@ -1,5 +1,8 @@
+use crate::APP_STATE;
 use crate::data::communication::{CommunicationType, CommunicationValue, DataTypes};
-use crate::omikron::ping_pong_task::PingPongTask;
+use crate::gui::log_panel::log_message;
+use crate::gui::log_panel::log_message_trans;
+use crate::omikron::ping_pong_task::{self, PingPongTask};
 use crate::users::contact::Contact;
 use crate::users::user_community_util::UserCommunityUtil;
 use crate::util::chat_files::ChatFiles;
@@ -8,6 +11,7 @@ use futures_util::{SinkExt, StreamExt};
 use json::JsonValue;
 use json::number::Number;
 use std::collections::HashMap;
+use std::pin::Pin;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -31,8 +35,9 @@ pub struct OmikronConnection {
             >,
         >,
     >,
-    waiting: Arc<Mutex<HashMap<Uuid, Box<dyn Fn(CommunicationValue) + Send>>>>, // waiting for responses
-    pingpong: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,                  // ping-pong handler
+    waiting: Arc<Mutex<HashMap<Uuid, Box<dyn Fn(CommunicationValue) + Send + Sync>>>>, // waiting for responses
+    pingpong: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>, // ping-pong handler
+    ping_pong_task: Arc<Mutex<Option<Arc<PingPongTask>>>>,
 }
 
 impl OmikronConnection {
@@ -41,18 +46,27 @@ impl OmikronConnection {
             writer: Arc::new(Mutex::new(None)),
             waiting: Arc::new(Mutex::new(HashMap::new())),
             pingpong: Arc::new(Mutex::new(None)),
+            ping_pong_task: Arc::new(Mutex::new(None)),
         }
     }
 
     /// Connect loop with retry
-    pub async fn connect<'a>(&'a self) {
+    pub async fn connect(&self) {
         loop {
             match connect_async("wss://tensamin.methanium.net/ws/iota/").await {
                 Ok((ws_stream, _)) => {
                     let (write_half, read_half) = ws_stream.split();
                     *self.writer.lock().await = Some(write_half);
-                    self.spawn_listener(read_half);
-                    self.start_ping_pong_task().await;
+                    self.spawn_listener(read_half).await;
+
+                    let ppt = PingPongTask::new(Arc::new(self.clone()));
+                    *self.ping_pong_task.lock().await = Some(Arc::new(ppt.clone()));
+                    tokio::spawn(async move {
+                        loop {
+                            ppt.send_ping();
+                            sleep(Duration::from_secs(5)).await;
+                        }
+                    });
                     break;
                 }
                 Err(e) => {
@@ -61,18 +75,6 @@ impl OmikronConnection {
             }
         }
     }
-
-    // Start the PingPongTask
-    pub async fn start_ping_pong_task(&self) {
-        let ping_pong_task = PingPongTask::new(Arc::new(self.clone()));
-
-        // Store the task handle in `pingpong` so we can manage it
-        let mut pingpong_handle = self.pingpong.lock().await;
-        *pingpong_handle = Some(tokio::spawn(async move {
-            ping_pong_task.run_ping_loop();
-        }));
-    }
-
     pub async fn send_message(&self, msg: String) {
         Self::send_message_static(&self.writer, msg).await;
     }
@@ -87,7 +89,7 @@ impl OmikronConnection {
     }
 
     /// Listener for all incoming messages
-    fn spawn_listener(
+    async fn spawn_listener(
         &self,
         mut read_half: futures_util::stream::SplitStream<
             WebSocketStream<MaybeTlsStream<TcpStream>>,
@@ -95,57 +97,60 @@ impl OmikronConnection {
     ) {
         let waiting = self.waiting.clone();
         let writer = self.writer.clone();
-
+        let sel = self.clone();
         tokio::spawn(async move {
             while let Some(msg) = read_half.next().await {
                 match msg {
                     Ok(Message::Close(Some(frame))) => {
-                        println!("[Omikron] Closed: {:?}", frame);
+                        log_message(format!("[Omikron] Closed: {:?}", frame));
                         break;
                     }
                     Ok(Message::Text(text)) => {
                         let mut cv = CommunicationValue::from_json(&text); // needs CommunicationValue parser
-                        if cv.is_type(CommunicationType::Pong) {
-                            // handle pingpong reset here
-                            continue;
+                        if cv.is_type(CommunicationType::pong) {
+                            sel.ping_pong_task
+                                .lock()
+                                .await
+                                .as_mut()
+                                .unwrap()
+                                .handle_pong(&cv, true);
+                            return;
                         }
                         // ************************************************ //
                         // Direct messages                                  //
                         // ************************************************ //
-                        println!("[Omikron] Received message: {:?}", cv);
-                        if cv.is_type(CommunicationType::MessageOtherIota) {
+
+                        log_message_trans(format!("{:?}", &cv.comm_type));
+                        if cv.is_type(CommunicationType::message_other_iota) {
                             let sender_id = &cv.get_sender();
                             let receiver_id = &cv.get_receiver();
 
                             ChatFiles::add_message(
-                                cv.get_data(DataTypes::SendTime)
+                                cv.get_data(DataTypes::send_time)
                                     .unwrap()
                                     .as_i64()
                                     .unwrap_or(-1),
                                 false,
                                 *receiver_id,
                                 *sender_id,
-                                cv.get_data(DataTypes::MessageContent)
+                                cv.get_data(DataTypes::message_content)
                                     .unwrap()
                                     .as_str()
                                     .unwrap(),
-                                false,
-                                false,
-                                0,
                             );
-                            let response = CommunicationValue::new(CommunicationType::MessageLive)
+                            let response = CommunicationValue::new(CommunicationType::message_live)
                                 .with_id(cv.get_id())
                                 .with_receiver(cv.get_receiver())
                                 .add_data(
-                                    DataTypes::SendTime,
-                                    cv.get_data(DataTypes::SendTime).unwrap().clone(),
+                                    DataTypes::send_time,
+                                    cv.get_data(DataTypes::send_time).unwrap().clone(),
                                 )
                                 .add_data(
-                                    DataTypes::Message,
-                                    cv.get_data(DataTypes::MessageContent).unwrap().clone(),
+                                    DataTypes::message,
+                                    cv.get_data(DataTypes::message_content).unwrap().clone(),
                                 )
                                 .add_data(
-                                    DataTypes::SenderId,
+                                    DataTypes::sender_id,
                                     JsonValue::String(cv.get_sender().clone().to_string()),
                                 );
                             Self::send_message_static(
@@ -156,26 +161,24 @@ impl OmikronConnection {
                             continue;
                         }
 
-                        if cv.is_type(CommunicationType::Message) {
-                            /*
-                            "user": {
-                                "avatar": true,
-                                "display": true,
-                                "timestamp": true
-                            },
-                            "body": {
-                                "tint": "<hex color>",
-                                "content": "<markdown (encrypted)>",
-                                "files": [
-                                    {
-                                        "name": "<cool name>",
-                                        "id": "<uuid>",
-                                        "type": "[ image | image_top_right | file ]"
-                                    }
-                                ]
-                            }
+                        if cv.is_type(CommunicationType::message) {
+                            /* DATA CONTAINER:
+                            "sent_by_self": true,
+                            "timestamp": unixTimestamp,
+                            "files": [ // wenn keine files dann weglassen
+                                {
+                                    "name": "<name>",
+                                    "id": "<uuid>",
+                                    "type": "[ image | image_top_right | file ]"
+                                }
+                            ],
+                            "content": "<enc markdown>"
                             */
                             let my_id = cv.get_sender();
+                            let other_id = Uuid::from_str(
+                                &*cv.get_data(DataTypes::receiver_id).unwrap().to_string(),
+                            )
+                            .unwrap();
                             ChatFiles::add_message(
                                 SystemTime::now()
                                     .duration_since(UNIX_EPOCH)
@@ -183,20 +186,12 @@ impl OmikronConnection {
                                     .as_millis() as i64,
                                 true,
                                 my_id,
-                                Uuid::from_str(
-                                    &*cv.get_data(DataTypes::ReceiverId).unwrap().to_string(),
-                                )
-                                .unwrap(),
-                                &*cv.get_data(DataTypes::MessageContent).unwrap().to_string(),
-                                false,
-                                false,
-                                0,
+                                other_id,
+                                &*cv.get_data(DataTypes::message_content).unwrap().to_string(),
                             );
-                            // ack
                             let ack = CommunicationValue::ack_message(cv.get_id(), my_id);
                             Self::send_message_static(&writer.clone(), ack.to_json().to_string())
                                 .await;
-                            // forward
                             let forward = CommunicationValue::forward_to_other_iota(&mut cv);
                             Self::send_message_static(
                                 &writer.clone(),
@@ -206,55 +201,52 @@ impl OmikronConnection {
                             continue;
                         }
 
-                        if cv.is_type(CommunicationType::MessageGet) {
+                        if cv.is_type(CommunicationType::message_get) {
                             let my_id = cv.get_sender();
                             let partner_id = Uuid::from_str(
-                                &*cv.get_data(DataTypes::ChatPartnerId).unwrap().to_string(),
+                                &*cv.get_data(DataTypes::user_id).unwrap().to_string(),
                             )
                             .unwrap();
                             let offset = cv
-                                .get_data(DataTypes::LoadedMessages)
+                                .get_data(DataTypes::loaded_messages)
                                 .unwrap_or(&JsonValue::Null)
                                 .to_string()
                                 .parse::<i64>()
                                 .unwrap_or(0);
                             let amount = cv
-                                .get_data(DataTypes::MessageAmount)
+                                .get_data(DataTypes::message_amount)
                                 .unwrap_or(&JsonValue::Null)
                                 .to_string()
                                 .parse::<i64>()
                                 .unwrap_or(0);
-
                             let messages =
-                                ChatFiles::get_messages(my_id, partner_id, offset, amount); // needs ChatFiles
-                            let mut resp = CommunicationValue::new(CommunicationType::MessageChunk)
+                                ChatFiles::get_messages(my_id, partner_id, offset, amount);
+                            let resp = CommunicationValue::new(CommunicationType::message_chunk)
                                 .with_id(cv.get_id())
-                                .with_receiver(my_id);
-                            if !messages.is_empty() {
-                                resp = resp.add_data(DataTypes::MessageChunk, messages);
-                            }
+                                .with_receiver(my_id)
+                                .add_data(DataTypes::message_chunk, messages);
+
                             Self::send_message_static(&writer.clone(), resp.to_json().to_string())
                                 .await;
                             continue;
                         }
 
-                        if cv.is_type(CommunicationType::GetChats) {
+                        if cv.is_type(CommunicationType::get_chats) {
                             let user_id = cv.get_sender();
-                            let users = get_users(user_id); // needs ChatsUtil
-                            let resp = CommunicationValue::new(CommunicationType::GetChats)
+                            let users = get_users(user_id);
+                            let resp = CommunicationValue::new(CommunicationType::get_chats)
                                 .with_id(cv.get_id())
                                 .with_receiver(user_id)
-                                .add_data(DataTypes::UserIds, users);
-                            println!("ALARM: {}", resp.to_json().to_string());
+                                .add_data(DataTypes::user_ids, users);
                             Self::send_message_static(&writer.clone(), resp.to_json().to_string())
                                 .await;
                             continue;
                         }
 
-                        if cv.is_type(CommunicationType::AddChat) {
+                        if cv.is_type(CommunicationType::add_chat) {
                             let user_id = cv.get_sender();
                             let other_id = Uuid::from_str(
-                                &*cv.get_data(DataTypes::UserId).unwrap().to_string(),
+                                &*cv.get_data(DataTypes::user_id).unwrap().to_string(),
                             )
                             .unwrap();
                             let mut contact =
@@ -266,7 +258,7 @@ impl OmikronConnection {
                                     .as_millis() as i64,
                             );
                             mod_user(user_id, &contact);
-                            let resp = CommunicationValue::new(CommunicationType::AddChat)
+                            let resp = CommunicationValue::new(CommunicationType::add_chat)
                                 .with_id(cv.get_id())
                                 .with_receiver(user_id);
                             Self::send_message_static(&writer.clone(), resp.to_json().to_string())
@@ -274,16 +266,16 @@ impl OmikronConnection {
                             continue;
                         }
 
-                        if cv.is_type(CommunicationType::AddCommunity) {
+                        if cv.is_type(CommunicationType::add_community) {
                             UserCommunityUtil::add_community(
                                 cv.get_sender(),
-                                cv.get_data(DataTypes::CommunityAddress)
+                                cv.get_data(DataTypes::community_address)
                                     .unwrap()
                                     .to_string(),
-                                cv.get_data(DataTypes::CommunityTitle).unwrap().to_string(),
-                                cv.get_data(DataTypes::Position).unwrap().to_string(),
+                                cv.get_data(DataTypes::community_title).unwrap().to_string(),
+                                cv.get_data(DataTypes::position).unwrap().to_string(),
                             );
-                            let resp = CommunicationValue::new(CommunicationType::AddCommunity)
+                            let resp = CommunicationValue::new(CommunicationType::add_community)
                                 .with_id(cv.get_id())
                                 .with_receiver(cv.get_sender());
                             Self::send_message_static(&writer.clone(), resp.to_json().to_string())
@@ -291,12 +283,12 @@ impl OmikronConnection {
                             continue;
                         }
 
-                        if cv.is_type(CommunicationType::GetCommunities) {
-                            let resp = CommunicationValue::new(CommunicationType::GetCommunities)
+                        if cv.is_type(CommunicationType::get_communities) {
+                            let resp = CommunicationValue::new(CommunicationType::get_communities)
                                 .with_id(cv.get_id())
                                 .with_receiver(cv.get_sender())
-                                .add_data(
-                                    DataTypes::Communities,
+                                .add_array(
+                                    DataTypes::communities,
                                     UserCommunityUtil::get_communities(cv.get_sender()),
                                 ); // needs UserCommunityUtil
                             Self::send_message_static(&writer.clone(), resp.to_json().to_string())
@@ -304,14 +296,14 @@ impl OmikronConnection {
                             continue;
                         }
 
-                        if cv.is_type(CommunicationType::RemoveCommunity) {
+                        if cv.is_type(CommunicationType::remove_community) {
                             UserCommunityUtil::remove_community(
                                 cv.get_sender(),
-                                cv.get_data(DataTypes::CommunityAddress)
+                                cv.get_data(DataTypes::community_address)
                                     .unwrap()
                                     .to_string(),
                             ); // needs UserCommunityUtil
-                            let resp = CommunicationValue::new(CommunicationType::RemoveCommunity)
+                            let resp = CommunicationValue::new(CommunicationType::remove_community)
                                 .with_id(cv.get_id())
                                 .with_receiver(cv.get_sender());
                             Self::send_message_static(&writer.clone(), resp.to_json().to_string())
@@ -320,7 +312,7 @@ impl OmikronConnection {
                         }
                     }
                     Err(e) => {
-                        eprintln!("[Omikron] Error: {}", e);
+                        log_message(format!("[Omikron] Error: {}", e));
                         break;
                     }
                     _ => {}
@@ -351,23 +343,11 @@ impl OmikronConnection {
         }
     }
 
-    pub fn on_answer<F>(&self, message_id: Uuid, callback: F)
-    where
-        F: Fn(CommunicationValue) + Send + 'static,
-    {
-        tokio::spawn({
-            let waiting = self.waiting.clone();
-            async move {
-                waiting.lock().await.insert(message_id, Box::new(callback));
-            }
-        });
-    }
-
     pub async fn send_ping_message(&self, uuid: Uuid) {
         // Send the ping message over the connection
-        let ping_message = CommunicationValue::new(CommunicationType::Ping)
+        let ping_message = CommunicationValue::new(CommunicationType::ping)
             .with_id(uuid)
-            .add_data_num(DataTypes::LastPing, Number::from(2))
+            .add_data_num(DataTypes::last_ping, Number::from(2))
             .to_json()
             .to_string();
         self.send_message(ping_message).await;

@@ -1,4 +1,5 @@
 use crate::auth::auth_connector::AuthConnector;
+use crate::gui::log_panel::log_message;
 use crate::users::user_manager::UserManager;
 use base64::{Engine as _, engine::general_purpose};
 use json::{JsonValue, object, stringify};
@@ -72,15 +73,14 @@ impl UserProfile {
             reset_token,
         );
 
-        // Migration hook (stubbed, since AuthConnector isn’t implemented here)
         if j.has_key("migrate")
             || j.has_key("migrating")
             || j.has_key("changing")
             || j.has_key("move")
             || j.has_key("moving")
         {
-            if AuthConnector::migrate_user(&mut up, stringify!("{}", Uuid::new_v4())).await {
-                println!("[INFO] Migration triggered for {}", up.username);
+            if AuthConnector::migrate_user(&mut up).await {
+                log_message(format!("[INFO] Migration triggered for {}", up.username));
                 UserManager::set_unique(true);
             }
         }
@@ -93,7 +93,6 @@ impl UserProfile {
         OsRng.fill(bytes.as_mut());
         let new_token = general_purpose::STANDARD.encode(&bytes);
         self.reset_token = new_token.clone();
-        UserManager::save_users().ok();
         new_token
     }
 

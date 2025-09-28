@@ -9,19 +9,15 @@ pub fn create_languages() {
     let mut debug_messages = JsonValue::new_object();
 
     // FRONTEND
-    frontend_messages.insert(
-        "USER_CONTEXT_GET_CONVERSATIONS",
-        "User {} is loading conversations",
-    );
-    frontend_messages.insert(
-        "USER_CONTEXT_GET_COMMUNITIES",
-        "User {} is loading communities",
-    );
-    frontend_messages.insert("ADD_CONVERSATION", "User {} added {}");
+    frontend_messages.insert("GET_CHATS", "User {} is loading conversations");
+    frontend_messages.insert("MESSAGE_GET", "User {} is loading messages");
+    frontend_messages.insert("get_communities", "User {} is loading communities");
+    frontend_messages.insert("client_connected", "Client {} connected");
+    frontend_messages.insert("add_conversation", "User {} added {}");
 
     // OMIKRON
     omikron_messages.insert(
-        "IdentificationResponse",
+        "identification_response",
         "IOTA identified on Omikron, {} users!",
     );
 
@@ -32,6 +28,7 @@ pub fn create_languages() {
     general_texts.insert("IOTA_ID", "IOTA ID: {}-####-####-####-############");
     general_texts.insert("USER_ID", "USER ID: {}");
     general_texts.insert("USER_IDS", "USER IDS: {}");
+    general_texts.insert("SETUP_COMPLETED", "Launched");
 
     // DEBUG
     debug_messages.insert("", "");
@@ -54,5 +51,10 @@ pub fn create_languages() {
         "languages/en_INT",
         "debug.json",
         &debug_messages.to_string(),
+    );
+    save_file(
+        "languages/en_INT",
+        "general.json",
+        &general_texts.to_string(),
     );
 }

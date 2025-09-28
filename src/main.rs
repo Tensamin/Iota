@@ -1,41 +1,30 @@
-use base64::Engine;
-use base64::engine::general_purpose;
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use futures_util::SinkExt;
 use json::JsonValue::String;
-use json::{self, JsonValue};
-use rand::Rng;
-use rand_core::OsRng;
-use rand_core::RngCore;
-use reqwest::header::PUBLIC_KEY_PINS_REPORT_ONLY;
-use sha2::{Digest, Sha256};
+use json::{self};
 use std::sync::Arc;
+use std::sync::LazyLock;
+use std::sync::Mutex;
 use uuid::Uuid;
-use x448::{PublicKey, Secret};
 
+mod auth;
 mod data;
 mod eula;
+mod gui;
+mod langu;
 mod omikron;
 mod users;
 mod util;
-mod gui {
-    pub mod ratatui_interface;
-}
 
-mod auth;
-mod langu;
-use crate::auth::auth_connector::AuthConnector;
 use crate::data::communication::{CommunicationType, CommunicationValue, DataTypes};
-use crate::eula::*;
+use crate::gui::log_panel;
+use crate::gui::log_panel::{AppState, log_message, log_message_trans};
 use crate::langu::language_creator;
-use crate::langu::language_manager;
 use crate::omikron::omikron_connection::OmikronConnection;
 use crate::omikron::ping_pong_task::PingPongTask;
 use crate::users::user_manager::UserManager;
-use crate::users::user_profile::UserProfile;
-use crate::users::user_profile_full::UserProfileFull;
-use crate::util::config_util::{self, CONFIG, ConfigUtil};
-use crate::util::file_util;
+use crate::util::config_util::CONFIG;
+
+pub static APP_STATE: LazyLock<Arc<Mutex<AppState>>> =
+    LazyLock::new(|| Arc::new(Mutex::new(AppState::new())));
 
 #[tokio::main]
 async fn main() {
@@ -46,8 +35,8 @@ async fn main() {
     //}
 
     // UI
-    gui::ratatui_interface::launch(false);
 
+    log_panel::setup();
     // LANGUAGE PACK
     language_creator::create_languages();
 
@@ -68,9 +57,10 @@ async fn main() {
 
     if !sb.is_empty() {
         sb.remove(0);
+        sb = sb + ",";
     }
-    println!(
-        "IOTA ID: {}-####-####-####-############",
+    log_message(format!(
+        "IOTA ID:  {}-####-####-####-############",
         CONFIG
             .lock()
             .unwrap()
@@ -79,8 +69,8 @@ async fn main() {
             .split("-")
             .next()
             .unwrap()
-    );
-    println!("User ID: {}", sb);
+    ));
+    log_message(format!("User IDS: {}", sb));
 
     // IDENTIFICATION ON OMIKRON
     let omikron: OmikronConnection = OmikronConnection::new();
@@ -88,10 +78,10 @@ async fn main() {
     let _ping_pong_task = PingPongTask::new(Arc::new(OmikronConnection::new()));
     omikron
         .send_message(
-            CommunicationValue::new(CommunicationType::Identification)
-                .add_data(DataTypes::UserIds, String(sb.to_string()))
+            CommunicationValue::new(CommunicationType::identification)
+                .add_data(DataTypes::user_ids, String(sb.to_string()))
                 .add_data(
-                    DataTypes::IotaId,
+                    DataTypes::iota_id,
                     String(CONFIG.lock().unwrap().get_iota_id().to_string()),
                 )
                 .to_json()
@@ -100,6 +90,7 @@ async fn main() {
                 .to_string(),
         )
         .await;
+    log_message_trans("SETUP_COMPLETED");
 
     loop {}
 }

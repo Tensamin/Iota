@@ -32,9 +32,7 @@ pub fn from_key(key: &str) -> String {
     LANGUAGE_PACK
         .lock()
         .unwrap()
-        .language
-        .get(key)
-        .unwrap_or(&String::new())
+        .get_translation(key)
         .to_string()
 }
 
@@ -90,9 +88,18 @@ impl LanguagePack {
             self.language
                 .insert(key.to_string(), value.as_str().unwrap().to_string());
         }
-    }
 
-    pub fn get_translation(&self, key: &str) -> &String {
-        self.language.get(key).unwrap()
+        let general_messages = file_util::load_file(&path, "general.json");
+        let general_messages = parse(&general_messages).unwrap();
+        for (key, value) in general_messages.entries() {
+            self.language
+                .insert(key.to_string(), value.as_str().unwrap().to_string());
+        }
+    }
+    pub fn get_translation(&self, key: &str) -> String {
+        match self.language.get(key) {
+            Some(v) if !v.is_empty() => v.clone(),
+            _ => key.to_uppercase(),
+        }
     }
 }
