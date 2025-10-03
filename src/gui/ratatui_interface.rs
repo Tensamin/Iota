@@ -1,13 +1,9 @@
 use color_eyre::Result;
-use color_eyre::eyre::Error;
-use crossterm::event::{self, Event};
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::widgets::{Block, Paragraph};
-use ratatui::{DefaultTerminal, Frame};
 use sys_info;
 use tokio::task;
-
-use crate::omikron::omikron_connection::OmikronConnection;
 
 pub fn launch(connection_status: bool) -> Result<()> {
     color_eyre::install()?;

@@ -2,7 +2,7 @@ use crate::APP_STATE;
 use crate::data::communication::{CommunicationType, CommunicationValue, DataTypes};
 use crate::gui::log_panel::log_message;
 use crate::gui::log_panel::log_message_trans;
-use crate::omikron::ping_pong_task::{self, PingPongTask};
+use crate::omikron::ping_pong_task::*;
 use crate::users::contact::Contact;
 use crate::users::user_community_util::UserCommunityUtil;
 use crate::util::chat_files::ChatFiles;
@@ -11,13 +11,13 @@ use futures_util::{SinkExt, StreamExt};
 use json::JsonValue;
 use json::number::Number;
 use std::collections::HashMap;
-use std::pin::Pin;
+use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
-use tokio::time::{Duration, sleep};
+use tokio::time::{Duration, Instant, sleep};
 use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream, connect_async, tungstenite::protocol::Message,
 };
@@ -37,7 +37,8 @@ pub struct OmikronConnection {
     >,
     waiting: Arc<Mutex<HashMap<Uuid, Box<dyn Fn(CommunicationValue) + Send + Sync>>>>, // waiting for responses
     pingpong: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>, // ping-pong handler
-    ping_pong_task: Arc<Mutex<Option<Arc<PingPongTask>>>>,
+    pub message_queue: Arc<Mutex<Vec<String>>>,
+    pub message_send_times: Arc<Mutex<HashMap<Uuid, Instant>>>,
 }
 
 impl OmikronConnection {
@@ -46,10 +47,15 @@ impl OmikronConnection {
             writer: Arc::new(Mutex::new(None)),
             waiting: Arc::new(Mutex::new(HashMap::new())),
             pingpong: Arc::new(Mutex::new(None)),
-            ping_pong_task: Arc::new(Mutex::new(None)),
+            message_queue: Arc::new(Mutex::new(Vec::new())),
+            message_send_times: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
+    pub async fn reconnect(&self) {
+        self.disconnect().await;
+        self.connect().await;
+    }
     /// Connect loop with retry
     pub async fn connect(&self) {
         loop {
@@ -58,18 +64,19 @@ impl OmikronConnection {
                     let (write_half, read_half) = ws_stream.split();
                     *self.writer.lock().await = Some(write_half);
                     self.spawn_listener(read_half).await;
-
-                    let ppt = PingPongTask::new(Arc::new(self.clone()));
-                    *self.ping_pong_task.lock().await = Some(Arc::new(ppt.clone()));
-                    tokio::spawn(async move {
+                    let cloned_self = self.clone();
+                    let handle = tokio::spawn(async move {
                         loop {
-                            ppt.send_ping();
-                            sleep(Duration::from_secs(5)).await;
+                            cloned_self.send_ping().await;
+                            sleep(Duration::from_secs(1)).await;
                         }
                     });
+
+                    *self.pingpong.lock().await = Some(handle);
                     break;
                 }
                 Err(e) => {
+                    log_message("CONNECTION FAILED");
                     sleep(Duration::from_secs(2)).await;
                 }
             }
@@ -106,15 +113,10 @@ impl OmikronConnection {
                         break;
                     }
                     Ok(Message::Text(text)) => {
-                        let mut cv = CommunicationValue::from_json(&text); // needs CommunicationValue parser
+                        let mut cv = CommunicationValue::from_json(&text);
                         if cv.is_type(CommunicationType::pong) {
-                            sel.ping_pong_task
-                                .lock()
-                                .await
-                                .as_mut()
-                                .unwrap()
-                                .handle_pong(&cv, true);
-                            return;
+                            sel.handle_pong(&cv, true).await;
+                            continue;
                         }
                         // ************************************************ //
                         // Direct messages                                  //
@@ -341,19 +343,5 @@ impl OmikronConnection {
         } else {
             Err(tokio_tungstenite::tungstenite::Error::ConnectionClosed)
         }
-    }
-
-    pub async fn send_ping_message(&self, uuid: Uuid) {
-        // Send the ping message over the connection
-        let ping_message = CommunicationValue::new(CommunicationType::ping)
-            .with_id(uuid)
-            .add_data_num(DataTypes::last_ping, Number::from(2))
-            .to_json()
-            .to_string();
-        self.send_message(ping_message).await;
-    }
-    pub async fn reconnect(&self) {
-        self.disconnect().await;
-        self.connect().await;
     }
 }

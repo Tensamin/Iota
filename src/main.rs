@@ -19,7 +19,6 @@ use crate::gui::log_panel;
 use crate::gui::log_panel::{AppState, log_message, log_message_trans};
 use crate::langu::language_creator;
 use crate::omikron::omikron_connection::OmikronConnection;
-use crate::omikron::ping_pong_task::PingPongTask;
 use crate::users::user_manager::UserManager;
 use crate::util::config_util::CONFIG;
 
@@ -75,7 +74,6 @@ async fn main() {
     // IDENTIFICATION ON OMIKRON
     let omikron: OmikronConnection = OmikronConnection::new();
     omikron.connect().await;
-    let _ping_pong_task = PingPongTask::new(Arc::new(OmikronConnection::new()));
     omikron
         .send_message(
             CommunicationValue::new(CommunicationType::identification)

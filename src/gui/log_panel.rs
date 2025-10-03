@@ -1,15 +1,20 @@
+use crate::APP_STATE;
+use crate::gui::widgets::betterblock::draw_block_joins;
 use crate::langu::language_manager::from_key;
-use crate::{APP_STATE, omikron::ping_pong_task::PingPongTask};
 use crossterm::{
     ExecutableCommand,
     terminal::{LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use ratatui::widgets::canvas::{Canvas, Line};
+use ratatui::widgets::{
+    BorderType,
+    canvas::{Canvas, Line},
+};
 use ratatui::{
     Terminal,
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
     style::Color,
+    symbols,
     widgets::{Block, Borders, List, ListItem, Paragraph},
 };
 use std::{collections::VecDeque, io::stdout, process::Command, thread, time::Duration};
@@ -112,15 +117,33 @@ fn smooth_data(data: &[(f64, f64)], window_size: usize) -> Vec<(f64, f64)> {
 fn downsample_to_fit_width(data: &[(f64, f64)], width: u16) -> Vec<(f64, f64)> {
     let width_usize = (width as usize) * 2;
     let len = data.len();
-    if len == 0 {
-        return Vec::new();
-    }
-    let slice = if len <= width_usize {
-        data.to_vec()
-    } else {
+
+    if len >= width_usize {
+        // Trim data to fit
         data[len - width_usize..].to_vec()
-    };
-    slice
+    } else {
+        let mut result = Vec::with_capacity(width_usize);
+
+        // Define X spacing (so dummy points are properly spaced across the canvas)
+        let dx = 1.0;
+        let pad_len = width_usize - len;
+
+        // If we have real data, use its first x position to determine where to start padding
+        let start_x = data
+            .first()
+            .map(|(x, _)| x - (dx * pad_len as f64))
+            .unwrap_or(0.0);
+        let y = data.first().map(|(_, y)| *y).unwrap_or(0.0);
+
+        // Fill padding with increasing x positions so they're visible
+        for i in 0..pad_len {
+            result.push((start_x + i as f64 * dx, -1 as f64));
+        }
+
+        // Then append the real data
+        result.extend_from_slice(data);
+        result
+    }
 }
 
 fn measure_ping_ms(host: &str) -> Option<f64> {
@@ -195,10 +218,7 @@ pub fn setup() {
                 st.push_net_down((counter, net_down));
                 st.push_net_up((counter, net_up));
 
-                st.sys_info = format!(
-                    "CPU: {:.1}%  RAM: {:.1}%\nNetDown: {}  NetUp: {}",
-                    tcpu, ram, delta_received, delta_transmitted
-                );
+                st.sys_info = format!("NetDown: {}  NetUp: {}", delta_received, delta_transmitted);
             }
 
             counter += 1.0;
@@ -216,6 +236,8 @@ pub fn setup() {
         loop {
             terminal
                 .draw(|f| {
+                    let sys = System::new_all();
+
                     let size = f.size();
                     let chunks = Layout::default()
                         .direction(Direction::Horizontal)
@@ -240,47 +262,55 @@ pub fn setup() {
 
                     let right_chunks = Layout::default()
                         .direction(Direction::Vertical)
-                        .constraints([Constraint::Length(5), Constraint::Min(0)])
+                        .constraints([Constraint::Length(3), Constraint::Min(0)])
                         .split(right);
 
                     {
                         let st = APP_STATE.lock().unwrap();
-                        let header = Paragraph::new(st.sys_info.clone())
-                            .block(Block::default().title("System Info").borders(Borders::ALL));
+                        let header = Paragraph::new(st.sys_info.clone()).block(
+                            Block::default()
+                                .title("System Info")
+                                .borders(Borders::TOP.union(Borders::LEFT).union(Borders::RIGHT)),
+                        );
                         f.render_widget(header, right_chunks[0]);
                     }
 
                     let grid_chunks = Layout::default()
                         .direction(Direction::Horizontal)
-                        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                        .constraints([Constraint::Percentage(49), Constraint::Percentage(51)])
                         .split(right_chunks[1]);
 
                     let left_column = Layout::default()
                         .direction(Direction::Vertical)
-                        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                        .constraints([Constraint::Percentage(49), Constraint::Percentage(51)])
                         .split(grid_chunks[0]);
 
                     let right_column = Layout::default()
                         .direction(Direction::Vertical)
-                        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                        .constraints([Constraint::Percentage(49), Constraint::Percentage(51)])
                         .split(grid_chunks[1]);
 
                     let st = APP_STATE.lock().unwrap();
                     let w = grid_chunks[0].width.saturating_sub(2);
 
-                    let ping_ds = downsample_to_fit_width(&smooth_data(&st.ping, 3), w);
+                    let ping_ds = downsample_to_fit_width(&smooth_data(&st.ping, 3), w + 1);
                     let cpu_ds = downsample_to_fit_width(&smooth_data(&st.cpu, 3), w);
                     let ram_ds = downsample_to_fit_width(&smooth_data(&st.ram, 3), w);
-                    let down_ds = downsample_to_fit_width(&st.net_down, w);
-                    let up_ds = downsample_to_fit_width(&st.net_up, w);
+                    let down_ds = downsample_to_fit_width(&st.net_down, w + 1);
+                    let up_ds = downsample_to_fit_width(&st.net_up, w + 1);
 
                     // ---- Render CPU ----
                     {
                         let min_x = cpu_ds.first().map(|(x, _)| *x).unwrap_or(0.0);
                         let max_x = cpu_ds.last().map(|(x, _)| *x).unwrap_or(100.0);
-
+                        let block = Block::default()
+                            .title(format!(
+                                "CPU {}%",
+                                &st.cpu.last().unwrap_or(&(0.0 as f64, 0.0 as f64)).1
+                            ))
+                            .borders(Borders::TOP.union(Borders::RIGHT).union(Borders::LEFT));
                         let canvas = Canvas::default()
-                            .block(Block::default().title("CPU %").borders(Borders::ALL))
+                            .block(block)
                             .x_bounds([min_x, max_x])
                             .y_bounds([0.0, 100.0])
                             .paint(|ctx| {
@@ -295,14 +325,38 @@ pub fn setup() {
                                 }
                             });
                         f.render_widget(canvas, left_column[0]);
+                        draw_block_joins(
+                            f,
+                            left_column[0],
+                            Borders::TOP.union(Borders::LEFT),
+                            Borders::TOP,
+                        );
+                        draw_block_joins(
+                            f,
+                            left_column[0],
+                            Borders::TOP.union(Borders::RIGHT),
+                            Borders::RIGHT,
+                        );
                     }
 
                     // ---- Render RAM ----
                     {
                         let min_x = ram_ds.first().map(|(x, _)| *x).unwrap_or(0.0);
                         let max_x = ram_ds.last().map(|(x, _)| *x).unwrap_or(100.0);
+
+                        let ram_used = sys.used_memory() as f64 / 1024.0 / 1024.0 / 1024.0;
+                        let ram_total = sys.total_memory() as f64 / 1024.0 / 1024.0 / 1024.0;
+                        let ram = (sys.used_memory() as f64 / sys.total_memory() as f64) * 100.0;
+
                         let canvas = Canvas::default()
-                            .block(Block::default().title("RAM %").borders(Borders::ALL))
+                            .block(
+                                Block::default()
+                                    .title(format!(
+                                        "RAM {:.1}% ({:.1}GiB/{:.1}GiB)",
+                                        ram, ram_used, ram_total
+                                    ))
+                                    .borders(Borders::ALL),
+                            )
                             .x_bounds([min_x, max_x])
                             .y_bounds([0.0, 100.0])
                             .paint(|ctx| {
@@ -316,7 +370,14 @@ pub fn setup() {
                                     });
                                 }
                             });
+
                         f.render_widget(canvas, left_column[1]);
+                        draw_block_joins(
+                            f,
+                            left_column[1],
+                            Borders::ALL,
+                            Borders::TOP.union(Borders::RIGHT),
+                        );
                     }
 
                     // ---- Render Ping ----
@@ -328,8 +389,8 @@ pub fn setup() {
                         let canvas = Canvas::default()
                             .block(
                                 Block::default()
-                                    .title(format!("Ping {}(ms)", max_y))
-                                    .borders(Borders::ALL),
+                                    .title(format!("Ping {:.1}(ms)", max_y))
+                                    .borders(Borders::TOP.union(Borders::RIGHT)),
                             )
                             .x_bounds([min_x, max_x])
                             .y_bounds([0.0, max_y])
@@ -345,6 +406,12 @@ pub fn setup() {
                                 }
                             });
                         f.render_widget(canvas, right_column[0]);
+                        draw_block_joins(
+                            f,
+                            right_column[0],
+                            Borders::RIGHT.union(Borders::TOP),
+                            Borders::TOP,
+                        );
                     }
 
                     // ---- Render Network ----
@@ -356,42 +423,47 @@ pub fn setup() {
                             max_sum = max_sum.max(up + down);
                         }
 
-                        let canvas = Canvas::default()
-                            .block(
-                                Block::default()
-                                    .title("Network Up/Down")
-                                    .borders(Borders::ALL),
-                            )
-                            .x_bounds([min_x, max_x])
-                            .y_bounds([0.0, max_sum])
-                            .paint(|ctx| {
-                                for (x, dval) in &down_ds {
-                                    ctx.draw(&Line {
-                                        x1: *x,
-                                        y1: 0.0,
-                                        x2: *x,
-                                        y2: *dval,
-                                        color: Color::Red,
-                                    });
-                                }
-                                for (x, uval) in &up_ds {
-                                    let dval = down_ds
-                                        .iter()
-                                        .find(|(xx, _)| (*xx - *x).abs() < f64::EPSILON)
-                                        .map(|(_, y)| *y)
-                                        .unwrap_or(0.0);
+                        let canvas =
+                            Canvas::default()
+                                .block(Block::default().title("Network Up/Down").borders(
+                                    Borders::TOP.union(Borders::RIGHT).union(Borders::BOTTOM),
+                                ))
+                                .x_bounds([min_x, max_x])
+                                .y_bounds([0.0, max_sum])
+                                .paint(|ctx| {
+                                    for (x, dval) in &down_ds {
+                                        ctx.draw(&Line {
+                                            x1: *x,
+                                            y1: 0.0,
+                                            x2: *x,
+                                            y2: *dval,
+                                            color: Color::Red,
+                                        });
+                                    }
+                                    for (x, uval) in &up_ds {
+                                        let dval = down_ds
+                                            .iter()
+                                            .find(|(xx, _)| (*xx - *x).abs() < f64::EPSILON)
+                                            .map(|(_, y)| *y)
+                                            .unwrap_or(0.0);
 
-                                    ctx.draw(&Line {
-                                        x1: *x,
-                                        y1: dval,
-                                        x2: *x,
-                                        y2: dval + *uval,
-                                        color: Color::Green,
-                                    });
-                                }
-                            });
+                                        ctx.draw(&Line {
+                                            x1: *x,
+                                            y1: dval,
+                                            x2: *x,
+                                            y2: dval + *uval,
+                                            color: Color::Green,
+                                        });
+                                    }
+                                });
 
                         f.render_widget(canvas, right_column[1]);
+                        draw_block_joins(
+                            f,
+                            right_column[1],
+                            Borders::TOP.union(Borders::RIGHT).union(Borders::BOTTOM),
+                            Borders::TOP,
+                        );
                     }
                 })
                 .unwrap();
