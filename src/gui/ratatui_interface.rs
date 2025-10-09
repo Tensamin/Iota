@@ -1,58 +1,45 @@
+use std::{
+    io::Stdout,
+    sync::{Arc, LazyLock},
+    time::Duration,
+};
+
+use crate::gui::nav_bar::NavBar;
 use color_eyre::Result;
-use ratatui::Frame;
-use ratatui::layout::{Constraint, Direction, Layout};
-use ratatui::widgets::{Block, Paragraph};
-use sys_info;
+use crossterm::{
+    execute,
+    terminal::{EnterAlternateScreen, enable_raw_mode},
+};
+use futures_util::lock::Mutex;
+use ratatui::{Terminal, prelude::CrosstermBackend};
+use std::io::stdout;
 use tokio::task;
 
-pub fn launch(connection_status: bool) -> Result<()> {
+pub static TERMINAL: LazyLock<Arc<Mutex<Terminal<CrosstermBackend<Stdout>>>>> =
+    LazyLock::new(|| {
+        Arc::new(Mutex::new(
+            Terminal::new(CrosstermBackend::new(stdout())).unwrap(),
+        ))
+    });
+pub static NAV_BAR: LazyLock<Arc<Mutex<NavBar>>> =
+    LazyLock::new(|| Arc::new(Mutex::new(NavBar::new())));
+
+pub fn launch() -> Result<()> {
     color_eyre::install()?;
-    task::spawn(run(connection_status));
+    task::spawn(run());
     ratatui::restore();
     Ok(())
 }
 
-async fn run(connection_status: bool) -> Result<()> {
-    loop {
-        ratatui::init().draw(|frame| render(frame, connection_status))?;
-    }
+fn init_terminal() {
+    let mut stdout = stdout();
+    execute!(stdout, EnterAlternateScreen).unwrap();
+    enable_raw_mode().unwrap();
 }
-
-fn render(frame: &mut Frame, connection_status: bool) {
-    let main_layout = Layout::default()
-        .direction(Direction::Horizontal)
-        .margin(1)
-        .constraints([Constraint::Percentage((100))].as_ref());
-    let main_block = Block::bordered().title("Tensamin - Iota");
-    let main_chunks = main_layout.split(frame.area());
-
-    let [left, right] = Layout::horizontal([Constraint::Fill(1); 2]).areas(main_chunks[0]);
-    let [top_right, bottom_right] = Layout::vertical([Constraint::Fill(1); 2]).areas(right);
-
-    let block_logs = Block::bordered().title("Logs");
-    let block_systeminfo = Block::bordered().title("System Info");
-    let block_ping = Block::bordered().title("Ping");
-
-    let mut operating_system: String;
-    match sys_info::os_type() {
-        Ok(os) => operating_system = os,
-        Err(error) => operating_system = error.to_string(),
+async fn run() -> Result<()> {
+    init_terminal();
+    loop {
+        NAV_BAR.lock().await.current_screen.renderf();
+        tokio::time::sleep(Duration::from_millis(1000)).await;
     }
-
-    let mut text_content: String = String::from("");
-    text_content.push_str("Operating System: ");
-    text_content.push_str(operating_system.as_str());
-    text_content.push_str("\nConnection: ");
-    text_content.push_str(if connection_status {
-        "Connected"
-    } else {
-        "Disconnected"
-    });
-
-    let paragraph_systeminfo = Paragraph::new(text_content).block(block_systeminfo);
-
-    frame.render_widget(Block::bordered().title("Tensamin - Iota"), frame.area());
-    frame.render_widget(Block::bordered().title("Logs"), left);
-    frame.render_widget(paragraph_systeminfo, top_right);
-    frame.render_widget(Block::bordered().title("Ping"), bottom_right);
 }

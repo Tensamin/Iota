@@ -24,8 +24,8 @@ pub enum DataTypes {
     accepted,
     accepted_profiles,
     denied_profiles,
-    message_content,
-    message_chunk,
+    content,
+    messages,
     send_time,
     get_time,
     get_variant,
@@ -50,8 +50,8 @@ pub enum DataTypes {
     ping_clients,
     matches,
     omikron,
-    loaded_messages,
-    message_amount,
+    offset,
+    amount,
     position,
     name,
     path,
@@ -97,8 +97,8 @@ impl DataTypes {
             "accepted" => DataTypes::accepted,
             "acceptedprofiles" => DataTypes::accepted_profiles,
             "deniedprofiles" => DataTypes::denied_profiles,
-            "messagecontent" => DataTypes::message_content,
-            "messagechunk" => DataTypes::message_chunk,
+            "content" => DataTypes::content,
+            "messages" => DataTypes::messages,
             "sendtime" => DataTypes::send_time,
             "gettime" => DataTypes::get_time,
             "getvariant" => DataTypes::get_variant,
@@ -123,8 +123,8 @@ impl DataTypes {
             "pingclients" => DataTypes::ping_clients,
             "matches" => DataTypes::matches,
             "omikron" => DataTypes::omikron,
-            "loadedmessages" => DataTypes::loaded_messages,
-            "messageamount" => DataTypes::message_amount,
+            "offset" => DataTypes::offset,
+            "amount" => DataTypes::amount,
             "position" => DataTypes::position,
             "name" => DataTypes::name,
             "path" => DataTypes::path,
@@ -158,10 +158,11 @@ pub enum CommunicationType {
     error,
     success,
     message,
+    message_send,
     message_live,
     message_other_iota,
     message_chunk,
-    message_get,
+    messages_get,
     change_confirm,
     confirm_receive,
     confirm_read,
@@ -210,7 +211,8 @@ impl CommunicationType {
             "messagelive" => CommunicationType::message_live,
             "messageotheriota" => CommunicationType::message_other_iota,
             "messagechunk" => CommunicationType::message_chunk,
-            "messageget" => CommunicationType::message_get,
+            "messagesget" => CommunicationType::messages_get,
+            "message_send" => CommunicationType::message_send,
             "changeconfirm" => CommunicationType::change_confirm,
             "confirmreceive" => CommunicationType::confirm_receive,
             "confirmread" => CommunicationType::confirm_read,
@@ -348,11 +350,10 @@ impl CommunicationValue {
         let mut data = HashMap::new();
         if parsed["data"].is_object() {
             for (k, v) in parsed["data"].entries() {
-                if let Some(val) = v.as_str() {
-                    data.insert(DataTypes::parse(k.to_string()), v.clone());
-                }
+                data.insert(DataTypes::parse(k.to_string()), v.clone());
             }
         }
+
         Self {
             id: uuid,
             comm_type,
@@ -389,13 +390,8 @@ impl CommunicationValue {
             .with_receiver(receiver.unwrap())
             .add_data(DataTypes::send_time, JsonValue::String(now_ms.to_string()))
             .add_data(
-                DataTypes::message_content,
-                JsonValue::String(
-                    original
-                        .get_data(DataTypes::message_content)
-                        .unwrap()
-                        .to_string(),
-                ),
+                DataTypes::content,
+                JsonValue::String(original.get_data(DataTypes::content).unwrap().to_string()),
             );
 
         // include sender_id if the original had one

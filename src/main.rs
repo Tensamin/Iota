@@ -15,8 +15,9 @@ mod users;
 mod util;
 
 use crate::data::communication::{CommunicationType, CommunicationValue, DataTypes};
-use crate::gui::log_panel;
-use crate::gui::log_panel::{AppState, log_message, log_message_trans};
+use crate::gui::app_state::AppState;
+use crate::gui::log_panel::{log_message, log_message_trans};
+use crate::gui::{log_panel, ratatui_interface};
 use crate::langu::language_creator;
 use crate::omikron::omikron_connection::OmikronConnection;
 use crate::users::user_manager::UserManager;
@@ -34,8 +35,8 @@ async fn main() {
     //}
 
     // UI
-
     log_panel::setup();
+    ratatui_interface::launch();
     // LANGUAGE PACK
     language_creator::create_languages();
 

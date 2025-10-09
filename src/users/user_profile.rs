@@ -1,4 +1,4 @@
-use crate::auth::auth_connector::AuthConnector;
+use crate::auth::auth_connector;
 use crate::gui::log_panel::log_message;
 use crate::users::user_manager::UserManager;
 use base64::{Engine as _, engine::general_purpose};
@@ -79,7 +79,7 @@ impl UserProfile {
             || j.has_key("move")
             || j.has_key("moving")
         {
-            if AuthConnector::migrate_user(&mut up).await {
+            if auth_connector::migrate_user(&mut up).await {
                 log_message(format!("[INFO] Migration triggered for {}", up.username));
                 UserManager::set_unique(true);
             }

@@ -1,10 +1,16 @@
 use crate::APP_STATE;
+use crate::gui::ratatui_interface::TERMINAL;
 use crate::gui::widgets::betterblock::draw_block_joins;
 use crate::langu::language_manager::from_key;
 use crossterm::{
-    ExecutableCommand,
-    terminal::{LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
+    ExecutableCommand, execute,
+    terminal::{
+        Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode,
+        enable_raw_mode,
+    },
 };
+
+use futures_util::lock::Mutex;
 use ratatui::widgets::{
     BorderType,
     canvas::{Canvas, Line},
@@ -13,82 +19,19 @@ use ratatui::{
     Terminal,
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
-    style::Color,
+    style::{Color, Style},
     symbols,
     widgets::{Block, Borders, List, ListItem, Paragraph},
 };
-use std::{collections::VecDeque, io::stdout, process::Command, thread, time::Duration};
+use std::{
+    collections::VecDeque,
+    io::{Stdout, Write, stdout},
+    process::Command,
+    sync::{Arc, LazyLock},
+    thread,
+    time::Duration,
+};
 use sysinfo::{RefreshKind, System};
-
-const MAX_POINTS: usize = 1000;
-const MAX_LOGS: usize = 100;
-
-#[derive(Clone)]
-pub struct AppState {
-    logs: VecDeque<String>,
-    cpu: Vec<(f64, f64)>,
-    ram: Vec<(f64, f64)>,
-    ping: Vec<(f64, f64)>,
-    net_up: Vec<(f64, f64)>,
-    net_down: Vec<(f64, f64)>,
-    sys_info: String,
-}
-
-impl AppState {
-    pub fn new() -> Self {
-        Self {
-            logs: VecDeque::new(),
-            cpu: Vec::new(),
-            ram: Vec::new(),
-            ping: Vec::new(),
-            net_up: Vec::new(),
-            net_down: Vec::new(),
-            sys_info: String::from("Loading..."),
-        }
-    }
-
-    pub fn push_log(&mut self, msg: String) {
-        if self.logs.len() >= MAX_LOGS {
-            self.logs.pop_front();
-        }
-        self.logs.push_back(msg);
-    }
-
-    pub fn push_cpu(&mut self, pt: (f64, f64)) {
-        self.cpu.push(pt);
-        if self.cpu.len() > MAX_POINTS {
-            self.cpu.remove(0);
-        }
-    }
-
-    pub fn push_ram(&mut self, pt: (f64, f64)) {
-        self.ram.push(pt);
-        if self.ram.len() > MAX_POINTS {
-            self.ram.remove(0);
-        }
-    }
-
-    pub fn push_ping_val(&mut self, pt: f64) {
-        self.ping.push((self.ping.len() as f64, pt));
-        if self.ping.len() > MAX_POINTS {
-            self.ping.remove(0);
-        }
-    }
-
-    pub fn push_net_up(&mut self, pt: (f64, f64)) {
-        self.net_up.push(pt);
-        if self.net_up.len() > MAX_POINTS {
-            self.net_up.remove(0);
-        }
-    }
-
-    pub fn push_net_down(&mut self, pt: (f64, f64)) {
-        self.net_down.push(pt);
-        if self.net_down.len() > MAX_POINTS {
-            self.net_down.remove(0);
-        }
-    }
-}
 
 pub fn log_message_trans(key: impl Into<String>) {
     APP_STATE.lock().unwrap().push_log(from_key(&key.into()));
@@ -146,36 +89,7 @@ fn downsample_to_fit_width(data: &[(f64, f64)], width: u16) -> Vec<(f64, f64)> {
     }
 }
 
-fn measure_ping_ms(host: &str) -> Option<f64> {
-    // adapt for Windows
-    let output = Command::new("ping")
-        .arg("-c")
-        .arg("1")
-        .arg("-W")
-        .arg("1")
-        .arg(host)
-        .output()
-        .ok()?;
-    let out = String::from_utf8_lossy(&output.stdout);
-    for line in out.lines() {
-        if line.contains("time=") {
-            if let Some(idx) = line.find("time=") {
-                let substr = &line[idx + 5..];
-                if let Some(end) = substr.find(" ms") {
-                    let num = &substr[..end];
-                    if let Ok(f) = num.parse::<f64>() {
-                        return Some(f);
-                    }
-                }
-            }
-        }
-    }
-    None
-}
-
 pub fn setup() {
-    enable_raw_mode().unwrap();
-
     // Start a background thread to sample metrics
     thread::spawn(move || {
         let mut sys = System::new_with_specifics(RefreshKind::new());
@@ -222,256 +136,248 @@ pub fn setup() {
             }
 
             counter += 1.0;
-            thread::sleep(Duration::from_millis(250));
+            thread::sleep(Duration::from_millis(1000));
         }
     });
+}
 
-    // UI rendering loop in a separate thread
-    thread::spawn(move || {
-        let stdout = stdout();
-        let mut terminal = Terminal::new(CrosstermBackend::new(stdout)).unwrap();
+pub fn render() {
+    tokio::spawn(async move {
+        TERMINAL
+            .lock()
+            .await
+            .draw(|f| {
+                let sys = System::new_all();
 
-        enable_raw_mode().unwrap();
+                let size = f.size();
+                let chunks = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
+                    .split(size);
 
-        loop {
-            terminal
-                .draw(|f| {
-                    let sys = System::new_all();
+                let left = chunks[0];
+                let right = chunks[1];
 
-                    let size = f.size();
-                    let chunks = Layout::default()
-                        .direction(Direction::Horizontal)
-                        .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
-                        .split(size);
-
-                    let left = chunks[0];
-                    let right = chunks[1];
-
-                    {
-                        let st = APP_STATE.lock().unwrap();
-                        let items: Vec<ListItem> = st
-                            .logs
-                            .iter()
-                            .rev()
-                            .map(|s| ListItem::new(s.clone()))
-                            .collect();
-                        let list = List::new(items)
-                            .block(Block::default().title("Logs").borders(Borders::ALL));
-                        f.render_widget(list, left);
-                    }
-
-                    let right_chunks = Layout::default()
-                        .direction(Direction::Vertical)
-                        .constraints([Constraint::Length(3), Constraint::Min(0)])
-                        .split(right);
-
-                    {
-                        let st = APP_STATE.lock().unwrap();
-                        let header = Paragraph::new(st.sys_info.clone()).block(
-                            Block::default()
-                                .title("System Info")
-                                .borders(Borders::TOP.union(Borders::LEFT).union(Borders::RIGHT)),
-                        );
-                        f.render_widget(header, right_chunks[0]);
-                    }
-
-                    let grid_chunks = Layout::default()
-                        .direction(Direction::Horizontal)
-                        .constraints([Constraint::Percentage(49), Constraint::Percentage(51)])
-                        .split(right_chunks[1]);
-
-                    let left_column = Layout::default()
-                        .direction(Direction::Vertical)
-                        .constraints([Constraint::Percentage(49), Constraint::Percentage(51)])
-                        .split(grid_chunks[0]);
-
-                    let right_column = Layout::default()
-                        .direction(Direction::Vertical)
-                        .constraints([Constraint::Percentage(49), Constraint::Percentage(51)])
-                        .split(grid_chunks[1]);
-
+                {
                     let st = APP_STATE.lock().unwrap();
-                    let w = grid_chunks[0].width.saturating_sub(2);
+                    let items: Vec<ListItem> = st
+                        .logs
+                        .iter()
+                        .rev()
+                        .map(|s| ListItem::new(s.clone()))
+                        .collect();
+                    let list = List::new(items)
+                        .block(Block::default().title("Logs").borders(Borders::ALL));
+                    f.render_widget(list, left);
+                }
 
-                    let ping_ds = downsample_to_fit_width(&smooth_data(&st.ping, 3), w + 1);
-                    let cpu_ds = downsample_to_fit_width(&smooth_data(&st.cpu, 3), w);
-                    let ram_ds = downsample_to_fit_width(&smooth_data(&st.ram, 3), w);
-                    let down_ds = downsample_to_fit_width(&st.net_down, w + 1);
-                    let up_ds = downsample_to_fit_width(&st.net_up, w + 1);
+                let right_chunks = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([Constraint::Length(3), Constraint::Min(0)])
+                    .split(right);
 
-                    // ---- Render CPU ----
-                    {
-                        let min_x = cpu_ds.first().map(|(x, _)| *x).unwrap_or(0.0);
-                        let max_x = cpu_ds.last().map(|(x, _)| *x).unwrap_or(100.0);
-                        let block = Block::default()
-                            .title(format!(
-                                "CPU {}%",
-                                &st.cpu.last().unwrap_or(&(0.0 as f64, 0.0 as f64)).1
-                            ))
-                            .borders(Borders::TOP.union(Borders::RIGHT).union(Borders::LEFT));
-                        let canvas = Canvas::default()
-                            .block(block)
-                            .x_bounds([min_x, max_x])
-                            .y_bounds([0.0, 100.0])
-                            .paint(|ctx| {
-                                for (x, y) in &cpu_ds {
-                                    ctx.draw(&Line {
-                                        x1: *x,
-                                        y1: 0.0,
-                                        x2: *x,
-                                        y2: *y,
-                                        color: Color::Cyan,
-                                    });
-                                }
-                            });
-                        f.render_widget(canvas, left_column[0]);
-                        draw_block_joins(
-                            f,
-                            left_column[0],
-                            Borders::TOP.union(Borders::LEFT),
-                            Borders::TOP,
-                        );
-                        draw_block_joins(
-                            f,
-                            left_column[0],
-                            Borders::TOP.union(Borders::RIGHT),
-                            Borders::RIGHT,
-                        );
-                    }
+                {
+                    let st = APP_STATE.lock().unwrap();
+                    let header = Paragraph::new(st.sys_info.clone()).block(
+                        Block::default()
+                            .title("System Info")
+                            .borders(Borders::TOP.union(Borders::LEFT).union(Borders::RIGHT)),
+                    );
+                    f.render_widget(header, right_chunks[0]);
+                }
 
-                    // ---- Render RAM ----
-                    {
-                        let min_x = ram_ds.first().map(|(x, _)| *x).unwrap_or(0.0);
-                        let max_x = ram_ds.last().map(|(x, _)| *x).unwrap_or(100.0);
+                let grid_chunks = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Percentage(49), Constraint::Percentage(51)])
+                    .split(right_chunks[1]);
 
-                        let ram_used = sys.used_memory() as f64 / 1024.0 / 1024.0 / 1024.0;
-                        let ram_total = sys.total_memory() as f64 / 1024.0 / 1024.0 / 1024.0;
-                        let ram = (sys.used_memory() as f64 / sys.total_memory() as f64) * 100.0;
+                let left_column = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([Constraint::Percentage(49), Constraint::Percentage(51)])
+                    .split(grid_chunks[0]);
 
-                        let canvas = Canvas::default()
-                            .block(
-                                Block::default()
-                                    .title(format!(
-                                        "RAM {:.1}% ({:.1}GiB/{:.1}GiB)",
-                                        ram, ram_used, ram_total
-                                    ))
-                                    .borders(Borders::ALL),
-                            )
-                            .x_bounds([min_x, max_x])
-                            .y_bounds([0.0, 100.0])
-                            .paint(|ctx| {
-                                for (x, y) in &ram_ds {
-                                    ctx.draw(&Line {
-                                        x1: *x,
-                                        y1: 0.0,
-                                        x2: *x,
-                                        y2: *y,
-                                        color: Color::Magenta,
-                                    });
-                                }
-                            });
+                let right_column = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([Constraint::Percentage(49), Constraint::Percentage(51)])
+                    .split(grid_chunks[1]);
 
-                        f.render_widget(canvas, left_column[1]);
-                        draw_block_joins(
-                            f,
-                            left_column[1],
-                            Borders::ALL,
-                            Borders::TOP.union(Borders::RIGHT),
-                        );
-                    }
+                let st = APP_STATE.lock().unwrap();
+                let w = grid_chunks[0].width.saturating_sub(2);
 
-                    // ---- Render Ping ----
-                    {
-                        let min_x = ping_ds.first().map(|(x, _)| *x).unwrap_or(0.0);
-                        let max_x = ping_ds.last().map(|(x, _)| *x).unwrap_or(100.0);
-                        let max_y = ping_ds.iter().map(|(_, y)| *y).fold(1.0, f64::max);
+                let ping_ds = downsample_to_fit_width(&smooth_data(&st.ping, 3), w + 4);
+                let cpu_ds = downsample_to_fit_width(&smooth_data(&st.cpu, 3), w);
+                let ram_ds = downsample_to_fit_width(&smooth_data(&st.ram, 3), w);
+                let down_ds = downsample_to_fit_width(&st.net_down, w + 4);
+                let up_ds = downsample_to_fit_width(&st.net_up, w + 4);
 
-                        let canvas = Canvas::default()
-                            .block(
-                                Block::default()
-                                    .title(format!("Ping {:.1}(ms)", max_y))
-                                    .borders(Borders::TOP.union(Borders::RIGHT)),
-                            )
-                            .x_bounds([min_x, max_x])
-                            .y_bounds([0.0, max_y])
-                            .paint(|ctx| {
-                                for (x, y) in &ping_ds {
-                                    ctx.draw(&Line {
-                                        x1: *x,
-                                        y1: 0.0,
-                                        x2: *x,
-                                        y2: *y,
-                                        color: Color::Yellow,
-                                    });
-                                }
-                            });
-                        f.render_widget(canvas, right_column[0]);
-                        draw_block_joins(
-                            f,
-                            right_column[0],
-                            Borders::RIGHT.union(Borders::TOP),
-                            Borders::TOP,
-                        );
-                    }
-
-                    // ---- Render Network ----
-                    {
-                        let min_x = up_ds.first().map(|(x, _)| *x).unwrap_or(0.0);
-                        let max_x = up_ds.last().map(|(x, _)| *x).unwrap_or(100.0);
-                        let mut max_sum: f64 = 1.0;
-                        for ((_, up), (_, down)) in up_ds.iter().zip(down_ds.iter()) {
-                            max_sum = max_sum.max(up + down);
-                        }
-
-                        let canvas =
-                            Canvas::default()
-                                .block(Block::default().title("Network Up/Down").borders(
-                                    Borders::TOP.union(Borders::RIGHT).union(Borders::BOTTOM),
-                                ))
-                                .x_bounds([min_x, max_x])
-                                .y_bounds([0.0, max_sum])
-                                .paint(|ctx| {
-                                    for (x, dval) in &down_ds {
-                                        ctx.draw(&Line {
-                                            x1: *x,
-                                            y1: 0.0,
-                                            x2: *x,
-                                            y2: *dval,
-                                            color: Color::Red,
-                                        });
-                                    }
-                                    for (x, uval) in &up_ds {
-                                        let dval = down_ds
-                                            .iter()
-                                            .find(|(xx, _)| (*xx - *x).abs() < f64::EPSILON)
-                                            .map(|(_, y)| *y)
-                                            .unwrap_or(0.0);
-
-                                        ctx.draw(&Line {
-                                            x1: *x,
-                                            y1: dval,
-                                            x2: *x,
-                                            y2: dval + *uval,
-                                            color: Color::Green,
-                                        });
-                                    }
+                // ---- Render CPU ----
+                {
+                    let min_x = cpu_ds.first().map(|(x, _)| *x).unwrap_or(0.0);
+                    let max_x = cpu_ds.last().map(|(x, _)| *x).unwrap_or(100.0);
+                    let block = Block::default()
+                        .title(format!(
+                            "CPU {}%",
+                            &st.cpu.last().unwrap_or(&(0.0 as f64, 0.0 as f64)).1
+                        ))
+                        .borders(Borders::TOP.union(Borders::RIGHT).union(Borders::LEFT));
+                    let canvas = Canvas::default()
+                        .block(block)
+                        .x_bounds([min_x, max_x])
+                        .y_bounds([0.0, 100.0])
+                        .paint(|ctx| {
+                            for (x, y) in &cpu_ds {
+                                ctx.draw(&Line {
+                                    x1: *x,
+                                    y1: 0.0,
+                                    x2: *x,
+                                    y2: *y,
+                                    color: Color::Cyan,
                                 });
+                            }
+                        });
+                    f.render_widget(canvas, left_column[0]);
+                    draw_block_joins(
+                        f,
+                        left_column[0],
+                        Borders::TOP.union(Borders::LEFT),
+                        Borders::TOP,
+                    );
+                    draw_block_joins(
+                        f,
+                        left_column[0],
+                        Borders::TOP.union(Borders::RIGHT),
+                        Borders::RIGHT,
+                    );
+                }
 
-                        f.render_widget(canvas, right_column[1]);
-                        draw_block_joins(
-                            f,
-                            right_column[1],
-                            Borders::TOP.union(Borders::RIGHT).union(Borders::BOTTOM),
-                            Borders::TOP,
-                        );
+                // ---- Render RAM ----
+                {
+                    let min_x = ram_ds.first().map(|(x, _)| *x).unwrap_or(0.0);
+                    let max_x = ram_ds.last().map(|(x, _)| *x).unwrap_or(100.0);
+
+                    let ram_used = sys.used_memory() as f64 / 1024.0 / 1024.0 / 1024.0;
+                    let ram_total = sys.total_memory() as f64 / 1024.0 / 1024.0 / 1024.0;
+                    let ram = (sys.used_memory() as f64 / sys.total_memory() as f64) * 100.0;
+
+                    let canvas = Canvas::default()
+                        .block(
+                            Block::default()
+                                .title(format!(
+                                    "RAM {:.1}% ({:.1}GiB/{:.1}GiB)",
+                                    ram, ram_used, ram_total
+                                ))
+                                .borders(Borders::ALL),
+                        )
+                        .x_bounds([min_x, max_x])
+                        .y_bounds([0.0, 100.0])
+                        .paint(|ctx| {
+                            for (x, y) in &ram_ds {
+                                ctx.draw(&Line {
+                                    x1: *x,
+                                    y1: 0.0,
+                                    x2: *x,
+                                    y2: *y,
+                                    color: Color::Magenta,
+                                });
+                            }
+                        });
+
+                    f.render_widget(canvas, left_column[1]);
+                    draw_block_joins(
+                        f,
+                        left_column[1],
+                        Borders::ALL,
+                        Borders::TOP.union(Borders::RIGHT),
+                    );
+                }
+
+                // ---- Render Ping ----
+                {
+                    let min_x = ping_ds.first().map(|(x, _)| *x).unwrap_or(0.0);
+                    let max_x = ping_ds.last().map(|(x, _)| *x).unwrap_or(100.0);
+                    let max_y = ping_ds.iter().map(|(_, y)| *y).fold(1.0, f64::max);
+
+                    let canvas = Canvas::default()
+                        .block(
+                            Block::default()
+                                .title(format!("Ping {:.1}(ms)", max_y))
+                                .borders(Borders::TOP.union(Borders::RIGHT)),
+                        )
+                        .x_bounds([min_x, max_x])
+                        .y_bounds([0.0, max_y])
+                        .paint(|ctx| {
+                            for (x, y) in &ping_ds {
+                                ctx.draw(&Line {
+                                    x1: *x,
+                                    y1: 0.0,
+                                    x2: *x,
+                                    y2: *y,
+                                    color: Color::Yellow,
+                                });
+                            }
+                        });
+                    f.render_widget(canvas, right_column[0]);
+                    draw_block_joins(
+                        f,
+                        right_column[0],
+                        Borders::RIGHT.union(Borders::TOP),
+                        Borders::TOP,
+                    );
+                }
+
+                // ---- Render Network ----
+                {
+                    let min_x = up_ds.first().map(|(x, _)| *x).unwrap_or(0.0);
+                    let max_x = up_ds.last().map(|(x, _)| *x).unwrap_or(100.0);
+                    let mut max_sum: f64 = 1.0;
+                    for ((_, up), (_, down)) in up_ds.iter().zip(down_ds.iter()) {
+                        max_sum = max_sum.max(up + down);
                     }
-                })
-                .unwrap();
 
-            thread::sleep(Duration::from_millis(100));
-        }
+                    let canvas = Canvas::default()
+                        .block(
+                            Block::default()
+                                .title("Network Up/Down")
+                                .borders(Borders::TOP.union(Borders::RIGHT).union(Borders::BOTTOM)),
+                        )
+                        .x_bounds([min_x, max_x])
+                        .y_bounds([0.0, max_sum])
+                        .paint(|ctx| {
+                            for (x, dval) in &down_ds {
+                                ctx.draw(&Line {
+                                    x1: *x,
+                                    y1: 0.0,
+                                    x2: *x,
+                                    y2: *dval,
+                                    color: Color::Red,
+                                });
+                            }
+                            for (x, uval) in &up_ds {
+                                let dval = down_ds
+                                    .iter()
+                                    .find(|(xx, _)| (*xx - *x).abs() < f64::EPSILON)
+                                    .map(|(_, y)| *y)
+                                    .unwrap_or(0.0);
+
+                                ctx.draw(&Line {
+                                    x1: *x,
+                                    y1: dval,
+                                    x2: *x,
+                                    y2: dval + *uval,
+                                    color: Color::Green,
+                                });
+                            }
+                        });
+
+                    f.render_widget(canvas, right_column[1]);
+                    draw_block_joins(
+                        f,
+                        right_column[1],
+                        Borders::TOP.union(Borders::RIGHT).union(Borders::BOTTOM),
+                        Borders::TOP,
+                    );
+                }
+            })
+            .unwrap();
     });
-    // Clean up terminal before exit
-    disable_raw_mode().unwrap();
-    stdout().execute(LeaveAlternateScreen).unwrap();
 }

@@ -1,4 +1,4 @@
-use crate::auth::auth_connector::AuthConnector;
+use crate::auth::auth_connector;
 use crate::users::user_profile::UserProfile;
 use crate::users::user_profile_full::UserProfileFull;
 use crate::util::config_util::CONFIG;
@@ -29,7 +29,7 @@ static UNIQUE: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 
 impl UserManager {
     pub async fn create_user(username: &str) -> Option<UserProfileFull> {
-        let user_id = AuthConnector::get_register().await.unwrap();
+        let user_id = auth_connector::get_register().await.unwrap();
         let mut buf = [0u8; 56];
         let mut rng = OsRng;
         rng.fill_bytes(&mut buf);
@@ -63,7 +63,7 @@ impl UserManager {
             private_key: general_purpose::STANDARD.encode(&private_key.as_bytes()),
         };
 
-        AuthConnector::complete_register(&up, &CONFIG.lock().unwrap().get_iota_id().to_string())
+        auth_connector::complete_register(&up, &CONFIG.lock().unwrap().get_iota_id().to_string())
             .await;
         save_file(
             "",

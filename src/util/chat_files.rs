@@ -1,9 +1,14 @@
+use crate::util::file_util::{get_children, load_file, save_file};
 use json::{self, JsonValue, array, object};
 use sha2::digest::typenum::Add1;
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::Path;
+use sys_info::loadavg;
 use uuid::Uuid;
+
+use crate::gui::log_panel::log_message;
+use crate::langu::language_manager::format;
 
 pub enum MessageState {
     Read,
@@ -26,23 +31,6 @@ impl MessageState {
 pub struct ChatFiles;
 
 impl ChatFiles {
-    fn load_file(dir: &str, file_name: &str) -> String {
-        let path = Path::new(dir).join(file_name);
-        if let Ok(mut f) = File::open(&path) {
-            let mut content = String::new();
-            let _ = f.read_to_string(&mut content);
-            content
-        } else {
-            String::new()
-        }
-    }
-
-    fn save_file(dir: &str, file_name: &str, content: &str) {
-        fs::create_dir_all(dir);
-        let path = Path::new(dir).join(file_name);
-        let mut file = File::create(path).unwrap();
-        file.write_all(content.as_bytes());
-    }
     pub fn add_message(
         send_time: i64,
         storage_owner_is_sender: bool,
@@ -52,25 +40,38 @@ impl ChatFiles {
     ) {
         let user_dir = format!("users/{}/chats/{}", storage_owner, external_user);
 
+        if let Err(e) = fs::create_dir_all(&user_dir) {
+            log_message(format!("Failed to create chat directory: {}", e));
+            return;
+        }
+
         let mut chunk_index = 0;
         let mut message_chunk = array![];
 
         // find latest chunk not full (max 800 msgs)
         loop {
             let file_name = format!("msgs_{}.json", chunk_index);
-            let file_content = Self::load_file(&user_dir, &file_name);
+            let file_content = load_file(&user_dir, &file_name);
 
             if !file_content.is_empty() {
                 if let Ok(current_chunk) = json::parse(&file_content) {
-                    if current_chunk.len() < 800 {
+                    if current_chunk.is_array() && current_chunk.len() < 800 {
                         message_chunk = current_chunk;
                         break;
                     }
+                } else {
+                    log_message(format!("Failed to parse existing JSON file: {}", file_name));
                 }
             } else {
+                // New file, use empty array
                 break;
             }
+
             chunk_index += 1;
+            if chunk_index > 1000 {
+                log_message(format!("Too many message chunks. Aborting add."));
+                return;
+            }
         }
 
         let json_obj = object! {
@@ -79,15 +80,16 @@ impl ChatFiles {
             "sender_is_me" => storage_owner_is_sender,
             "message_state" => MessageState::Sending.as_str()
         };
-        message_chunk.push(json_obj).unwrap();
 
-        Self::save_file(
-            &user_dir,
-            &format!("msgs_{}.json", chunk_index),
-            &message_chunk.dump(),
-        );
+        if let Err(e) = message_chunk.push(json_obj) {
+            log_message(format!("Failed to push new message into JSON array: {}", e));
+            return;
+        }
+
+        let file_name = format!("msgs_{}.json", chunk_index);
+        log_message(format!("Saving message to {}/{}", user_dir, file_name));
+        save_file(&user_dir, &file_name, &message_chunk.dump());
     }
-
     pub fn change_message_state(
         storage_owner: Uuid,
         external_user: Uuid,
@@ -108,7 +110,7 @@ impl ChatFiles {
             let fname_str = fname.to_string_lossy();
 
             if fname_str.starts_with("msgs_") && fname_str.ends_with(".json") {
-                let file_content = Self::load_file(&user_dir, &fname_str);
+                let file_content = load_file(&user_dir, &fname_str);
                 if file_content.is_empty() {
                     continue;
                 }
@@ -124,7 +126,7 @@ impl ChatFiles {
                     }
 
                     if modified {
-                        Self::save_file(&user_dir, &fname_str, &chunk.dump());
+                        save_file(&user_dir, &fname_str, &chunk.dump());
                         break;
                     }
                 }
@@ -139,29 +141,20 @@ impl ChatFiles {
         loaded_messages: i64,
         amount: i64,
     ) -> JsonValue {
-        let user_dir = format!("users/{}/chats/{}", storage_owner, external_user);
-        let path = Path::new(&user_dir);
         let mut messages = array![];
 
-        if !path.exists() {
-            return messages;
-        }
-
         let mut latest_chunk_index: i32 = -1;
-        if let Ok(entries) = fs::read_dir(path) {
-            for entry in entries.flatten() {
-                let fname = entry.file_name();
-                let fname_str = fname.to_string_lossy();
-                if fname_str.starts_with("msgs_") && fname_str.ends_with(".json") {
-                    if let Some(num) = fname_str
-                        .strip_prefix("msgs_")
-                        .and_then(|s| s.strip_suffix(".json"))
-                    {
-                        if let Ok(index) = num.parse::<i32>() {
-                            if index > latest_chunk_index {
-                                latest_chunk_index = index;
-                            }
-                        }
+        let files = get_children(&format!("users/{}/chats/{}", storage_owner, external_user));
+
+        for entry in files {
+            if let Some(num) = {
+                entry
+                    .strip_prefix("msgs_")
+                    .and_then(|s| s.strip_suffix(".json"))
+            } {
+                if let Ok(index) = num.parse::<i32>() {
+                    if index > latest_chunk_index {
+                        latest_chunk_index = index;
                     }
                 }
             }
@@ -179,7 +172,10 @@ impl ChatFiles {
                 break;
             }
             let file_name = format!("msgs_{}.json", chunk_index);
-            let file_content = Self::load_file(&user_dir, &file_name);
+            let file_content = load_file(
+                &format!("users/{}/chats/{}", storage_owner, external_user),
+                &file_name,
+            );
             if file_content.is_empty() {
                 continue;
             }

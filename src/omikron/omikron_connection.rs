@@ -1,17 +1,13 @@
-use crate::APP_STATE;
 use crate::data::communication::{CommunicationType, CommunicationValue, DataTypes};
 use crate::gui::log_panel::log_message;
 use crate::gui::log_panel::log_message_trans;
-use crate::omikron::ping_pong_task::*;
 use crate::users::contact::Contact;
 use crate::users::user_community_util::UserCommunityUtil;
 use crate::util::chat_files::ChatFiles;
 use crate::util::chats_util::{get_user, get_users, mod_user};
 use futures_util::{SinkExt, StreamExt};
 use json::JsonValue;
-use json::number::Number;
 use std::collections::HashMap;
-use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -121,7 +117,6 @@ impl OmikronConnection {
                         // ************************************************ //
                         // Direct messages                                  //
                         // ************************************************ //
-
                         log_message_trans(format!("{:?}", &cv.comm_type));
                         if cv.is_type(CommunicationType::message_other_iota) {
                             let sender_id = &cv.get_sender();
@@ -135,10 +130,7 @@ impl OmikronConnection {
                                 false,
                                 *receiver_id,
                                 *sender_id,
-                                cv.get_data(DataTypes::message_content)
-                                    .unwrap()
-                                    .as_str()
-                                    .unwrap(),
+                                cv.get_data(DataTypes::content).unwrap().as_str().unwrap(),
                             );
                             let response = CommunicationValue::new(CommunicationType::message_live)
                                 .with_id(cv.get_id())
@@ -149,7 +141,7 @@ impl OmikronConnection {
                                 )
                                 .add_data(
                                     DataTypes::message,
-                                    cv.get_data(DataTypes::message_content).unwrap().clone(),
+                                    cv.get_data(DataTypes::content).unwrap().clone(),
                                 )
                                 .add_data(
                                     DataTypes::sender_id,
@@ -163,7 +155,7 @@ impl OmikronConnection {
                             continue;
                         }
 
-                        if cv.is_type(CommunicationType::message) {
+                        if cv.is_type(CommunicationType::message_send) {
                             /* DATA CONTAINER:
                             "sent_by_self": true,
                             "timestamp": unixTimestamp,
@@ -189,8 +181,14 @@ impl OmikronConnection {
                                 true,
                                 my_id,
                                 other_id,
-                                &*cv.get_data(DataTypes::message_content).unwrap().to_string(),
+                                &*cv.get_data(DataTypes::content).unwrap().to_string(),
                             );
+                            log_message(format!(
+                                "Received a message from {} reading {} to {}",
+                                my_id,
+                                &*cv.get_data(DataTypes::content).unwrap().to_string(),
+                                other_id
+                            ));
                             let ack = CommunicationValue::ack_message(cv.get_id(), my_id);
                             Self::send_message_static(&writer.clone(), ack.to_json().to_string())
                                 .await;
@@ -203,30 +201,32 @@ impl OmikronConnection {
                             continue;
                         }
 
-                        if cv.is_type(CommunicationType::message_get) {
+                        if cv.is_type(CommunicationType::messages_get) {
                             let my_id = cv.get_sender();
                             let partner_id = Uuid::from_str(
                                 &*cv.get_data(DataTypes::user_id).unwrap().to_string(),
                             )
                             .unwrap();
                             let offset = cv
-                                .get_data(DataTypes::loaded_messages)
+                                .get_data(DataTypes::offset)
                                 .unwrap_or(&JsonValue::Null)
                                 .to_string()
                                 .parse::<i64>()
                                 .unwrap_or(0);
                             let amount = cv
-                                .get_data(DataTypes::message_amount)
+                                .get_data(DataTypes::amount)
                                 .unwrap_or(&JsonValue::Null)
                                 .to_string()
                                 .parse::<i64>()
                                 .unwrap_or(0);
+                            log_message(format!("A:{} O:{}, P:{}", amount, offset, partner_id));
                             let messages =
                                 ChatFiles::get_messages(my_id, partner_id, offset, amount);
-                            let resp = CommunicationValue::new(CommunicationType::message_chunk)
+                            log_message(messages.to_string());
+                            let resp = CommunicationValue::new(CommunicationType::messages_get)
                                 .with_id(cv.get_id())
                                 .with_receiver(my_id)
-                                .add_data(DataTypes::message_chunk, messages);
+                                .add_data(DataTypes::messages, messages);
 
                             Self::send_message_static(&writer.clone(), resp.to_json().to_string())
                                 .await;
