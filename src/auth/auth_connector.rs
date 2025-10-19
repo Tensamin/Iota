@@ -1,13 +1,9 @@
 use crate::CONFIG;
 use crate::data::communication::{CommunicationType, CommunicationValue, DataTypes};
-use crate::gui::log_panel::log_message;
 use crate::users::user_profile::UserProfile;
-use hex;
 use json::JsonValue;
 use reqwest::header::CONTENT_TYPE;
 use reqwest::{Client, Response};
-use sha2::{Digest, Sha256};
-use std::collections::HashMap;
 use std::time::Duration;
 use uuid::Uuid;
 #[derive(Debug, Clone)]
@@ -32,7 +28,7 @@ fn client() -> Client {
 }
 
 pub async fn unregister_user(user_id: Uuid, reset_token: &str) -> Option<bool> {
-    let url = format!("https:/auth.tensamin.methanium.net/api/delete/{}/", user_id);
+    let url = format!("https:/auth.tensamin.methanium.net/api/delete/{}", user_id);
     let client = client();
 
     let mut payload = JsonValue::new_object();
@@ -52,7 +48,7 @@ pub async fn unregister_user(user_id: Uuid, reset_token: &str) -> Option<bool> {
 
 pub async fn get_uuid(username: &str) -> Option<Uuid> {
     let url = format!(
-        "https://auth.tensamin.methanium.net/api/get/uuid/{}/",
+        "https://auth.tensamin.methanium.net/api/get/uuid/{}",
         username
     );
     let client = client();
@@ -66,7 +62,7 @@ pub async fn get_uuid(username: &str) -> Option<Uuid> {
 }
 
 pub async fn get_user(user_id: Uuid) -> Option<AuthUser> {
-    let url = format!("https://auth.tensamin.methanium.net/api/get/{}/", user_id);
+    let url = format!("https://auth.tensamin.methanium.net/api/get/{}", user_id);
     let client = client();
     let res = client.get(&url).send().await.ok()?;
     let json = res.text().await.ok()?;
@@ -105,7 +101,7 @@ pub async fn get_user(user_id: Uuid) -> Option<AuthUser> {
 }
 
 pub async fn get_register() -> Option<Uuid> {
-    let url = "https://auth.tensamin.methanium.net/api/register/init/".to_string();
+    let url = "https://auth.tensamin.methanium.net/api/register/init".to_string();
     let client = client();
     let res = client.get(&url).send().await.ok()?;
     let json = res.text().await.ok()?;
@@ -115,7 +111,7 @@ pub async fn get_register() -> Option<Uuid> {
 }
 
 pub async fn complete_register(user_profile: &UserProfile, iota_id: &str) -> bool {
-    let url = "https://auth.tensamin.methanium.net/api/register/complete/";
+    let url = "https://auth.tensamin.methanium.net/api/register/complete";
     let client = client();
 
     let mut payload = JsonValue::new_object();

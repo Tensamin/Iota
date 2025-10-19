@@ -1,38 +1,28 @@
 use crate::APP_STATE;
 use crate::gui::ratatui_interface::TERMINAL;
 use crate::gui::widgets::betterblock::draw_block_joins;
+use crate::langu::language_manager::format;
 use crate::langu::language_manager::from_key;
-use crossterm::{
-    ExecutableCommand, execute,
-    terminal::{
-        Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode,
-        enable_raw_mode,
-    },
-};
 
-use futures_util::lock::Mutex;
-use ratatui::widgets::{
-    BorderType,
-    canvas::{Canvas, Line},
-};
+use crate::data::communication::{CommunicationType, CommunicationValue, DataTypes};
+use json::Array;
+use ratatui::widgets::canvas::{Canvas, Line};
 use ratatui::{
-    Terminal,
-    backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
-    style::{Color, Style},
-    symbols,
+    style::Color,
     widgets::{Block, Borders, List, ListItem, Paragraph},
 };
-use std::{
-    collections::VecDeque,
-    io::{Stdout, Write, stdout},
-    process::Command,
-    sync::{Arc, LazyLock},
-    thread,
-    time::Duration,
-};
+use std::{thread, time::Duration};
 use sysinfo::{RefreshKind, System};
 
+pub fn log_cv(cv: &CommunicationValue) {
+    if cv.is_type(CommunicationType::identification_response) {
+        let args = [cv.get_data(DataTypes::accepted).unwrap().as_str().unwrap()];
+        log_message(format(&"identification_response", &args));
+    } else {
+        log_message_trans(format!("{:?}", &cv.comm_type));
+    }
+}
 pub fn log_message_trans(key: impl Into<String>) {
     APP_STATE.lock().unwrap().push_log(from_key(&key.into()));
 }

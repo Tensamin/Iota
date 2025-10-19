@@ -1,25 +1,8 @@
 use crate::APP_STATE;
 use crate::data::communication::{CommunicationType, CommunicationValue, DataTypes};
-use crate::gui::log_panel::{log_message, log_message_trans};
 use crate::omikron::omikron_connection::OmikronConnection;
-use crate::users::contact::Contact;
-use crate::users::user_community_util::UserCommunityUtil;
-use crate::util::chat_files::ChatFiles;
-use crate::util::chats_util::{get_user, get_users, mod_user};
-use futures_util::{SinkExt, StreamExt};
-use json::JsonValue;
 use json::number::Number;
-use std::collections::HashMap;
-use std::ops::Deref;
-use std::str::FromStr;
-use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
-use tokio::net::TcpStream;
-use tokio::sync::Mutex;
-use tokio::time::{Duration, Instant, sleep};
-use tokio_tungstenite::{
-    MaybeTlsStream, WebSocketStream, connect_async, tungstenite::protocol::Message,
-};
+use tokio::time::Instant;
 use uuid::Uuid;
 
 impl OmikronConnection {

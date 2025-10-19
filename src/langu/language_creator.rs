@@ -9,8 +9,8 @@ pub fn create_languages() {
     let mut debug_messages = JsonValue::new_object();
 
     // FRONTEND
-    frontend_messages.insert("GET_CHATS", "User {} is loading conversations");
-    frontend_messages.insert("MESSAGE_GET", "User {} is loading messages");
+    frontend_messages.insert("get_chats", "User {} is loading conversations");
+    frontend_messages.insert("message_get", "User {} is loading messages");
     frontend_messages.insert("get_communities", "User {} is loading communities");
     frontend_messages.insert("client_connected", "Client {} connected");
     frontend_messages.insert("add_conversation", "User {} added {}");
@@ -22,13 +22,13 @@ pub fn create_languages() {
     );
 
     // BUTTONS
-    button_texts.insert("EXIT", "Exit");
+    button_texts.insert("exit", "Exit");
 
     // GENERAL
-    general_texts.insert("IOTA_ID", "IOTA ID: {}-####-####-####-############");
-    general_texts.insert("USER_ID", "USER ID: {}");
-    general_texts.insert("USER_IDS", "USER IDS: {}");
-    general_texts.insert("SETUP_COMPLETED", "Launched");
+    general_texts.insert("iota_id", "IOTA ID: {}-####-####-####-############");
+    general_texts.insert("user_id", "USER ID: {}");
+    general_texts.insert("user_ids", "USER IDS: {}");
+    general_texts.insert("setup_completed", "Launched");
 
     // DEBUG
     debug_messages.insert("", "");

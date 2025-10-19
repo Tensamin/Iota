@@ -1,6 +1,6 @@
 use crate::data::communication::{CommunicationType, CommunicationValue, DataTypes};
-use crate::gui::log_panel::log_message;
 use crate::gui::log_panel::log_message_trans;
+use crate::gui::log_panel::{log_cv, log_message};
 use crate::users::contact::Contact;
 use crate::users::user_community_util::UserCommunityUtil;
 use crate::util::chat_files::ChatFiles;
@@ -33,8 +33,8 @@ pub struct OmikronConnection {
     >,
     waiting: Arc<Mutex<HashMap<Uuid, Box<dyn Fn(CommunicationValue) + Send + Sync>>>>, // waiting for responses
     pingpong: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>, // ping-pong handler
-    pub message_queue: Arc<Mutex<Vec<String>>>,
     pub message_send_times: Arc<Mutex<HashMap<Uuid, Instant>>>,
+    pub is_connected: Arc<Mutex<bool>>,
 }
 
 impl OmikronConnection {
@@ -43,14 +43,12 @@ impl OmikronConnection {
             writer: Arc::new(Mutex::new(None)),
             waiting: Arc::new(Mutex::new(HashMap::new())),
             pingpong: Arc::new(Mutex::new(None)),
-            message_queue: Arc::new(Mutex::new(Vec::new())),
             message_send_times: Arc::new(Mutex::new(HashMap::new())),
+            is_connected: Arc::new(Mutex::new(false)),
         }
     }
-
-    pub async fn reconnect(&self) {
-        self.disconnect().await;
-        self.connect().await;
+    pub async fn is_connected(&self) -> bool {
+        *self.is_connected.lock().await
     }
     /// Connect loop with retry
     pub async fn connect(&self) {
@@ -68,11 +66,13 @@ impl OmikronConnection {
                         }
                     });
 
+                    *self.is_connected.lock().await = true;
                     *self.pingpong.lock().await = Some(handle);
                     break;
                 }
-                Err(e) => {
+                Err(_) => {
                     log_message("CONNECTION FAILED");
+                    *self.is_connected.lock().await = false;
                     sleep(Duration::from_secs(2)).await;
                 }
             }
@@ -80,15 +80,6 @@ impl OmikronConnection {
     }
     pub async fn send_message(&self, msg: String) {
         Self::send_message_static(&self.writer, msg).await;
-    }
-
-    pub async fn disconnect(&self) {
-        if let Some(handle) = self.pingpong.lock().await.take() {
-            handle.abort();
-        }
-        if let Some(mut ws) = self.writer.lock().await.take() {
-            let _ = ws.close().await;
-        }
     }
 
     /// Listener for all incoming messages
@@ -100,12 +91,14 @@ impl OmikronConnection {
     ) {
         let waiting = self.waiting.clone();
         let writer = self.writer.clone();
+        let is_connected = self.is_connected.clone();
         let sel = self.clone();
         tokio::spawn(async move {
             while let Some(msg) = read_half.next().await {
                 match msg {
                     Ok(Message::Close(Some(frame))) => {
                         log_message(format!("[Omikron] Closed: {:?}", frame));
+                        *is_connected.lock().await = false;
                         break;
                     }
                     Ok(Message::Text(text)) => {
@@ -117,7 +110,7 @@ impl OmikronConnection {
                         // ************************************************ //
                         // Direct messages                                  //
                         // ************************************************ //
-                        log_message_trans(format!("{:?}", &cv.comm_type));
+                        log_cv(&cv);
                         if cv.is_type(CommunicationType::message_other_iota) {
                             let sender_id = &cv.get_sender();
                             let receiver_id = &cv.get_receiver();
@@ -183,12 +176,6 @@ impl OmikronConnection {
                                 other_id,
                                 &*cv.get_data(DataTypes::content).unwrap().to_string(),
                             );
-                            log_message(format!(
-                                "Received a message from {} reading {} to {}",
-                                my_id,
-                                &*cv.get_data(DataTypes::content).unwrap().to_string(),
-                                other_id
-                            ));
                             let ack = CommunicationValue::ack_message(cv.get_id(), my_id);
                             Self::send_message_static(&writer.clone(), ack.to_json().to_string())
                                 .await;
@@ -219,10 +206,8 @@ impl OmikronConnection {
                                 .to_string()
                                 .parse::<i64>()
                                 .unwrap_or(0);
-                            log_message(format!("A:{} O:{}, P:{}", amount, offset, partner_id));
                             let messages =
                                 ChatFiles::get_messages(my_id, partner_id, offset, amount);
-                            log_message(messages.to_string());
                             let resp = CommunicationValue::new(CommunicationType::messages_get)
                                 .with_id(cv.get_id())
                                 .with_receiver(my_id)
@@ -315,6 +300,7 @@ impl OmikronConnection {
                     }
                     Err(e) => {
                         log_message(format!("[Omikron] Error: {}", e));
+                        *is_connected.lock().await = false;
                         break;
                     }
                     _ => {}
@@ -334,14 +320,11 @@ impl OmikronConnection {
             >,
         >,
         msg: String,
-    ) -> Result<(), tokio_tungstenite::tungstenite::Error> {
+    ) {
         let mut guard = writer.lock().await;
         if let Some(writer) = guard.as_mut() {
-            writer.send(Message::Text(msg)).await?;
-            writer.flush().await?;
-            Ok(())
-        } else {
-            Err(tokio_tungstenite::tungstenite::Error::ConnectionClosed)
+            writer.send(Message::Text(msg)).await;
+            writer.flush().await;
         }
     }
 }

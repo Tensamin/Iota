@@ -11,6 +11,7 @@ use uuid::Uuid;
 #[derive(Eq, Hash, PartialEq, Clone, Debug)]
 pub enum DataTypes {
     error_type,
+    accepted_ids,
     chat_partner_id,
     iota_id,
     user_id,
@@ -310,7 +311,7 @@ impl CommunicationValue {
         self.data.insert(key, JsonValue::Array(value));
         self
     }
-    pub fn get_data(&mut self, key: DataTypes) -> Option<&JsonValue> {
+    pub fn get_data(&self, key: DataTypes) -> Option<&JsonValue> {
         self.data.get(&key)
     }
 

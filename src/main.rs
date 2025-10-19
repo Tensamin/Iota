@@ -3,6 +3,8 @@ use json::{self};
 use std::sync::Arc;
 use std::sync::LazyLock;
 use std::sync::Mutex;
+use sysinfo::User;
+use tokio::time::{Duration, sleep};
 use uuid::Uuid;
 
 mod auth;
@@ -49,7 +51,6 @@ async fn main() {
 
     // USER MANAGEMENT
     UserManager::load_users().await;
-
     let mut sb = "".to_string();
     for up in UserManager::get_users() {
         sb = sb + "," + &up.user_id.to_string().as_str();
@@ -71,25 +72,29 @@ async fn main() {
             .unwrap()
     ));
     log_message(format!("User IDS: {}", sb));
-
-    // IDENTIFICATION ON OMIKRON
-    let omikron: OmikronConnection = OmikronConnection::new();
-    omikron.connect().await;
-    omikron
-        .send_message(
-            CommunicationValue::new(CommunicationType::identification)
-                .add_data(DataTypes::user_ids, String(sb.to_string()))
-                .add_data(
-                    DataTypes::iota_id,
-                    String(CONFIG.lock().unwrap().get_iota_id().to_string()),
-                )
-                .to_json()
-                .to_string()
-                .as_mut()
-                .to_string(),
-        )
-        .await;
-    log_message_trans("SETUP_COMPLETED");
-
-    loop {}
+    loop {
+        let omikron: OmikronConnection = OmikronConnection::new();
+        omikron.connect().await;
+        omikron
+            .send_message(
+                CommunicationValue::new(CommunicationType::identification)
+                    .add_data(DataTypes::user_ids, String(sb.to_string()))
+                    .add_data(
+                        DataTypes::iota_id,
+                        String(CONFIG.lock().unwrap().get_iota_id().to_string()),
+                    )
+                    .to_json()
+                    .to_string()
+                    .as_mut()
+                    .to_string(),
+            )
+            .await;
+        log_message_trans("setup_completed");
+        loop {
+            if !omikron.is_connected().await {
+                break;
+            }
+            sleep(Duration::from_secs(1)).await;
+        }
+    }
 }
