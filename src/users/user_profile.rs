@@ -1,15 +1,10 @@
 use crate::auth::auth_connector;
 use crate::gui::log_panel::log_message;
-use crate::users::user_manager::UserManager;
+use crate::users::user_manager;
 use base64::{Engine as _, engine::general_purpose};
-use json::{JsonValue, object, stringify};
+use json::{JsonValue, object};
 use rand::Rng;
 use rand::rngs::OsRng;
-use std::collections::HashMap;
-use std::fs;
-use std::io;
-use std::path::Path;
-use std::sync::Mutex;
 use uuid::Uuid;
 
 // --- UserProfile ---
@@ -81,7 +76,7 @@ impl UserProfile {
         {
             if auth_connector::migrate_user(&mut up).await {
                 log_message(format!("[INFO] Migration triggered for {}", up.username));
-                UserManager::set_unique(true);
+                user_manager::set_unique(true);
             }
         }
 

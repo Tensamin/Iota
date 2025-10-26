@@ -1,9 +1,8 @@
 use crate::data::communication::{CommunicationType, CommunicationValue, DataTypes};
-use crate::gui::log_panel::log_message_trans;
 use crate::gui::log_panel::{log_cv, log_message};
 use crate::users::contact::Contact;
 use crate::users::user_community_util::UserCommunityUtil;
-use crate::util::chat_files::ChatFiles;
+use crate::util::chat_files;
 use crate::util::chats_util::{get_user, get_users, mod_user};
 use futures_util::{SinkExt, StreamExt};
 use json::JsonValue;
@@ -33,6 +32,7 @@ pub struct OmikronConnection {
     >,
     waiting: Arc<Mutex<HashMap<Uuid, Box<dyn Fn(CommunicationValue) + Send + Sync>>>>, // waiting for responses
     pingpong: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>, // ping-pong handler
+    pub last_ping: Arc<Mutex<i64>>,
     pub message_send_times: Arc<Mutex<HashMap<Uuid, Instant>>>,
     pub is_connected: Arc<Mutex<bool>>,
 }
@@ -43,6 +43,7 @@ impl OmikronConnection {
             writer: Arc::new(Mutex::new(None)),
             waiting: Arc::new(Mutex::new(HashMap::new())),
             pingpong: Arc::new(Mutex::new(None)),
+            last_ping: Arc::new(Mutex::new(-1)),
             message_send_times: Arc::new(Mutex::new(HashMap::new())),
             is_connected: Arc::new(Mutex::new(false)),
         }
@@ -112,14 +113,14 @@ impl OmikronConnection {
                         // ************************************************ //
                         log_cv(&cv);
                         if cv.is_type(CommunicationType::message_other_iota) {
-                            let sender_id = &cv.get_sender();
-                            let receiver_id = &cv.get_receiver();
+                            let sender_id = &cv.get_sender().unwrap();
+                            let receiver_id = &cv.get_receiver().unwrap();
 
-                            ChatFiles::add_message(
+                            chat_files::add_message(
                                 cv.get_data(DataTypes::send_time)
                                     .unwrap()
                                     .as_i64()
-                                    .unwrap_or(-1),
+                                    .unwrap_or(0) as u128,
                                 false,
                                 *receiver_id,
                                 *sender_id,
@@ -127,7 +128,7 @@ impl OmikronConnection {
                             );
                             let response = CommunicationValue::new(CommunicationType::message_live)
                                 .with_id(cv.get_id())
-                                .with_receiver(cv.get_receiver())
+                                .with_receiver(cv.get_receiver().unwrap())
                                 .add_data(
                                     DataTypes::send_time,
                                     cv.get_data(DataTypes::send_time).unwrap().clone(),
@@ -138,7 +139,7 @@ impl OmikronConnection {
                                 )
                                 .add_data(
                                     DataTypes::sender_id,
-                                    JsonValue::String(cv.get_sender().clone().to_string()),
+                                    JsonValue::String(cv.get_sender().unwrap().to_string()),
                                 );
                             Self::send_message_static(
                                 &writer.clone(),
@@ -161,16 +162,16 @@ impl OmikronConnection {
                             ],
                             "content": "<enc markdown>"
                             */
-                            let my_id = cv.get_sender();
+                            let my_id = cv.get_sender().unwrap();
                             let other_id = Uuid::from_str(
                                 &*cv.get_data(DataTypes::receiver_id).unwrap().to_string(),
                             )
                             .unwrap();
-                            ChatFiles::add_message(
+                            chat_files::add_message(
                                 SystemTime::now()
                                     .duration_since(UNIX_EPOCH)
                                     .unwrap()
-                                    .as_millis() as i64,
+                                    .as_millis() as u128,
                                 true,
                                 my_id,
                                 other_id,
@@ -189,7 +190,7 @@ impl OmikronConnection {
                         }
 
                         if cv.is_type(CommunicationType::messages_get) {
-                            let my_id = cv.get_sender();
+                            let my_id = cv.get_sender().unwrap();
                             let partner_id = Uuid::from_str(
                                 &*cv.get_data(DataTypes::user_id).unwrap().to_string(),
                             )
@@ -207,7 +208,7 @@ impl OmikronConnection {
                                 .parse::<i64>()
                                 .unwrap_or(0);
                             let messages =
-                                ChatFiles::get_messages(my_id, partner_id, offset, amount);
+                                chat_files::get_messages(my_id, partner_id, offset, amount);
                             let resp = CommunicationValue::new(CommunicationType::messages_get)
                                 .with_id(cv.get_id())
                                 .with_receiver(my_id)
@@ -219,7 +220,7 @@ impl OmikronConnection {
                         }
 
                         if cv.is_type(CommunicationType::get_chats) {
-                            let user_id = cv.get_sender();
+                            let user_id = cv.get_sender().unwrap();
                             let users = get_users(user_id);
                             let resp = CommunicationValue::new(CommunicationType::get_chats)
                                 .with_id(cv.get_id())
@@ -231,7 +232,7 @@ impl OmikronConnection {
                         }
 
                         if cv.is_type(CommunicationType::add_chat) {
-                            let user_id = cv.get_sender();
+                            let user_id = cv.get_sender().unwrap();
                             let other_id = Uuid::from_str(
                                 &*cv.get_data(DataTypes::user_id).unwrap().to_string(),
                             )
@@ -255,7 +256,7 @@ impl OmikronConnection {
 
                         if cv.is_type(CommunicationType::add_community) {
                             UserCommunityUtil::add_community(
-                                cv.get_sender(),
+                                cv.get_sender().unwrap(),
                                 cv.get_data(DataTypes::community_address)
                                     .unwrap()
                                     .to_string(),
@@ -264,7 +265,7 @@ impl OmikronConnection {
                             );
                             let resp = CommunicationValue::new(CommunicationType::add_community)
                                 .with_id(cv.get_id())
-                                .with_receiver(cv.get_sender());
+                                .with_receiver(cv.get_sender().unwrap());
                             Self::send_message_static(&writer.clone(), resp.to_json().to_string())
                                 .await;
                             continue;
@@ -273,11 +274,11 @@ impl OmikronConnection {
                         if cv.is_type(CommunicationType::get_communities) {
                             let resp = CommunicationValue::new(CommunicationType::get_communities)
                                 .with_id(cv.get_id())
-                                .with_receiver(cv.get_sender())
+                                .with_receiver(cv.get_sender().unwrap())
                                 .add_array(
                                     DataTypes::communities,
-                                    UserCommunityUtil::get_communities(cv.get_sender()),
-                                ); // needs UserCommunityUtil
+                                    UserCommunityUtil::get_communities(cv.get_sender().unwrap()),
+                                );
                             Self::send_message_static(&writer.clone(), resp.to_json().to_string())
                                 .await;
                             continue;
@@ -285,14 +286,14 @@ impl OmikronConnection {
 
                         if cv.is_type(CommunicationType::remove_community) {
                             UserCommunityUtil::remove_community(
-                                cv.get_sender(),
+                                cv.get_sender().unwrap(),
                                 cv.get_data(DataTypes::community_address)
                                     .unwrap()
                                     .to_string(),
                             ); // needs UserCommunityUtil
                             let resp = CommunicationValue::new(CommunicationType::remove_community)
                                 .with_id(cv.get_id())
-                                .with_receiver(cv.get_sender());
+                                .with_receiver(cv.get_sender().unwrap());
                             Self::send_message_static(&writer.clone(), resp.to_json().to_string())
                                 .await;
                             continue;

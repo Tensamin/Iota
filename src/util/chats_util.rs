@@ -1,7 +1,4 @@
-use axum::Json;
 use json::{self, JsonValue, array};
-use std::path::Path;
-use std::string::String;
 use uuid::Uuid;
 
 use crate::users::contact::Contact;

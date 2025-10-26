@@ -35,3 +35,8 @@ x509 = "*"
 sha2 = "*"
 der = "*"
 pkcs8 = { version = "*", features = ["alloc"] }
+tungstenite = "*"
+futures = "*"
+aes-gcm = "*"
+hkdf = "*"
+hmac = "*"

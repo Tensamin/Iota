@@ -1,7 +1,9 @@
 use crate::APP_STATE;
 use crate::data::communication::{CommunicationType, CommunicationValue, DataTypes};
 use crate::omikron::omikron_connection::OmikronConnection;
+use json::JsonValue;
 use json::number::Number;
+use std::sync::Arc;
 use tokio::time::Instant;
 use uuid::Uuid;
 
@@ -17,7 +19,10 @@ impl OmikronConnection {
     pub async fn send_ping_message(&self, uuid: Uuid) {
         let ping_message = CommunicationValue::new(CommunicationType::ping)
             .with_id(uuid)
-            .add_data_num(DataTypes::last_ping, Number::from(2))
+            .add_data_num(
+                DataTypes::last_ping,
+                Number::from(*self.last_ping.lock().await),
+            )
             .to_json()
             .to_string();
 
@@ -33,11 +38,13 @@ impl OmikronConnection {
         };
 
         if let Some(send_time) = send_time_opt {
-            let ping = Instant::now().duration_since(send_time).as_millis() as f64;
+            let ping = Instant::now().duration_since(send_time).as_millis() as i64;
             self.message_send_times.lock().await.remove(&id);
 
+            *self.last_ping.lock().await = ping as i64;
+
             if log {
-                APP_STATE.lock().unwrap().push_ping_val(ping);
+                APP_STATE.lock().unwrap().push_ping_val(ping as f64);
             }
         }
     }

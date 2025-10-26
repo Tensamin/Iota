@@ -1,13 +1,12 @@
-use json::JsonValue::String;
-use json::{self};
+use json::{self, JsonValue::String};
 use std::sync::Arc;
 use std::sync::LazyLock;
 use std::sync::Mutex;
-use sysinfo::User;
 use tokio::time::{Duration, sleep};
 use uuid::Uuid;
 
 mod auth;
+mod communities;
 mod data;
 mod eula;
 mod gui;
@@ -16,13 +15,16 @@ mod omikron;
 mod users;
 mod util;
 
+use crate::communities::interactables::registry;
+use crate::communities::{community_manager, community_socket};
 use crate::data::communication::{CommunicationType, CommunicationValue, DataTypes};
 use crate::gui::app_state::AppState;
 use crate::gui::log_panel::{log_message, log_message_trans};
 use crate::gui::{log_panel, ratatui_interface};
 use crate::langu::language_creator;
+use crate::langu::language_manager::format;
 use crate::omikron::omikron_connection::OmikronConnection;
-use crate::users::user_manager::UserManager;
+use crate::users::user_manager;
 use crate::util::config_util::CONFIG;
 
 pub static APP_STATE: LazyLock<Arc<Mutex<AppState>>> =
@@ -50,9 +52,9 @@ async fn main() {
     }
 
     // USER MANAGEMENT
-    UserManager::load_users().await;
+    user_manager::load_users().await;
     let mut sb = "".to_string();
-    for up in UserManager::get_users() {
+    for up in user_manager::get_users() {
         sb = sb + "," + &up.user_id.to_string().as_str();
     }
 
@@ -72,6 +74,32 @@ async fn main() {
             .unwrap()
     ));
     log_message(format!("User IDS: {}", sb));
+
+    // COMMUNITY MANAGEMENT
+    registry::load_interactables().await;
+    community_manager::load_communities().await;
+    community_manager::save_communities().await;
+    let mut sb1 = "".to_string();
+    for cp in community_manager::get_communities().await {
+        sb1 = sb1 + "," + &cp.get_name().to_string().as_str();
+    }
+
+    if !sb1.is_empty() {
+        sb1.remove(0);
+        sb1 = sb1 + ",";
+    }
+    log_message(format!("Community IDS: {}", sb1));
+    let port = CONFIG.lock().unwrap().get_port();
+    if community_socket::start(port).await {
+        log_message(format("community_active", &[&port.to_string()]));
+    } else {
+        if port < 1024 {
+            log_message(format("community_start_error_admin", &[&port.to_string()]));
+        } else {
+            log_message(format("community_start_error", &[&port.to_string()]));
+        }
+    }
+
     loop {
         let omikron: OmikronConnection = OmikronConnection::new();
         omikron.connect().await;

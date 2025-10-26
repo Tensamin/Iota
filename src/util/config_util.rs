@@ -1,8 +1,6 @@
 use crate::util::file_util::{load_file, save_file};
 use json::JsonValue;
 use once_cell::sync::Lazy;
-use std::fs::{self, File};
-use std::path::Path;
 use std::sync::Mutex;
 use uuid::Uuid;
 
@@ -34,6 +32,10 @@ impl ConfigUtil {
             .unwrap_or_default()
             .parse()
             .unwrap_or_default()
+    }
+
+    pub fn get_port(&self) -> u16 {
+        self.config["port"].as_u16().unwrap_or(1984)
     }
 
     pub fn change(&mut self, key: &str, value: Uuid) {

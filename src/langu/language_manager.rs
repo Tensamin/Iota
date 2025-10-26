@@ -1,5 +1,5 @@
-use crate::util::file_util::{self, load_file};
-use json::{JsonValue, parse};
+use crate::util::file_util::{self};
+use json::parse;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::sync::Mutex;

@@ -1,9 +1,6 @@
-use axum::Json;
 use json::number::Number;
-use json::{Array, JsonValue, object, parse, stringify};
-use std::any::Any;
+use json::{Array, JsonValue, object, parse};
 use std::collections::HashMap;
-use std::env::VarsOs;
 use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
@@ -157,6 +154,9 @@ impl DataTypes {
 #[derive(PartialEq, Clone, Debug)]
 pub enum CommunicationType {
     error,
+    error_invalid_user_id,
+    error_not_found,
+    error_invalid_challenge,
     success,
     message,
     message_send,
@@ -213,7 +213,7 @@ impl CommunicationType {
             "messageotheriota" => CommunicationType::message_other_iota,
             "messagechunk" => CommunicationType::message_chunk,
             "messagesget" => CommunicationType::messages_get,
-            "message_send" => CommunicationType::message_send,
+            "messagesend" => CommunicationType::message_send,
             "changeconfirm" => CommunicationType::change_confirm,
             "confirmreceive" => CommunicationType::confirm_receive,
             "confirmread" => CommunicationType::confirm_read,
@@ -259,8 +259,8 @@ impl CommunicationType {
 pub struct CommunicationValue {
     pub id: Uuid,
     pub comm_type: CommunicationType,
-    pub sender: Uuid,
-    pub receiver: Uuid,
+    pub sender: Option<Uuid>,
+    pub receiver: Option<Uuid>,
     pub data: HashMap<DataTypes, JsonValue>,
 }
 
@@ -269,8 +269,8 @@ impl CommunicationValue {
         Self {
             id: Uuid::new_v4(),
             comm_type,
-            sender: Uuid::new_v4(),
-            receiver: Uuid::new_v4(),
+            sender: None,
+            receiver: None,
             data: HashMap::new(),
         }
     }
@@ -282,17 +282,17 @@ impl CommunicationValue {
         self.id.clone()
     }
     pub fn with_sender(mut self, sender: Uuid) -> Self {
-        self.sender = sender;
+        self.sender = Some(sender);
         self
     }
-    pub fn get_sender(&self) -> Uuid {
+    pub fn get_sender(&self) -> Option<Uuid> {
         self.sender.clone()
     }
     pub fn with_receiver(mut self, receiver: Uuid) -> Self {
-        self.receiver = receiver;
+        self.receiver = Some(receiver);
         self
     }
-    pub fn get_receiver(&self) -> Uuid {
+    pub fn get_receiver(&self) -> Option<Uuid> {
         self.receiver.clone()
     }
     pub fn add_data_num(mut self, key: DataTypes, value: Number) -> Self {
@@ -323,13 +323,34 @@ impl CommunicationValue {
         for (k, v) in &self.data {
             jdata[&format!("{:?}", k)] = JsonValue::from(v.clone());
         }
-
-        object! {
-            id: self.id.to_string(),
-            type: format!("{:?}", self.comm_type),
-            sender: self.sender.to_string(),
-            receiver: self.receiver.to_string(),
-            data: jdata
+        if self.sender.is_some() && self.receiver.is_some() {
+            object! {
+                id: self.id.to_string(),
+                type: format!("{:?}", self.comm_type),
+                sender: self.sender.unwrap().to_string(),
+                receiver: self.receiver.unwrap().to_string(),
+                data: jdata
+            }
+        } else if self.sender.is_some() {
+            object! {
+                id: self.id.to_string(),
+                type: format!("{:?}", self.comm_type),
+                sender: self.sender.unwrap().to_string(),
+                data: jdata
+            }
+        } else if self.receiver.is_some() {
+            object! {
+                id: self.id.to_string(),
+                type: format!("{:?}", self.comm_type),
+                receiver: self.receiver.unwrap().to_string(),
+                data: jdata
+            }
+        } else {
+            object! {
+                id: self.id.to_string(),
+                type: format!("{:?}", self.comm_type),
+                data: jdata
+            }
         }
     }
 
@@ -337,15 +358,24 @@ impl CommunicationValue {
         let parsed = parse(json_str).unwrap();
 
         let comm_type = CommunicationType::parse(parsed["type"].to_string());
-
-        let sender: Uuid = parsed["sender"]
-            .as_str()
-            .and_then(|s| Uuid::parse_str(s).ok())
-            .unwrap_or(Uuid::new_v4());
-        let receiver: Uuid = parsed["receiver"]
-            .as_str()
-            .and_then(|s| Uuid::parse_str(s).ok())
-            .unwrap_or(Uuid::new_v4());
+        let mut sender: Option<Uuid> = None;
+        if parsed.has_key("sender") {
+            sender = Some(
+                parsed["sender"]
+                    .as_str()
+                    .and_then(|s| Uuid::parse_str(s).ok())
+                    .unwrap_or(Uuid::new_v4()),
+            );
+        }
+        let mut receiver: Option<Uuid> = None;
+        if parsed.has_key("receiver") {
+            receiver = Some(
+                parsed["receiver"]
+                    .as_str()
+                    .and_then(|s| Uuid::parse_str(s).ok())
+                    .unwrap_or(Uuid::new_v4()),
+            );
+        }
 
         let uuid = Uuid::parse_str(parsed["id"].as_str().unwrap_or("")).unwrap_or(Uuid::new_v4());
         let mut data = HashMap::new();
@@ -386,17 +416,22 @@ impl CommunicationValue {
             .unwrap()
             .as_millis() as i64;
 
-        let cv = CommunicationValue::new(CommunicationType::message_other_iota)
+        let sender = original.get_sender();
+        CommunicationValue::new(CommunicationType::message_other_iota)
             .with_id(original.get_id())
             .with_receiver(receiver.unwrap())
+            .add_data(                DataTypes::receiver_id,
+                JsonValue::String(receiver.unwrap().to_string()),
+            )
+            .with_sender(sender.unwrap())
             .add_data(DataTypes::send_time, JsonValue::String(now_ms.to_string()))
+            .add_data(
+                DataTypes::sender_id,
+                JsonValue::String(sender.unwrap().to_string()),
+            )
             .add_data(
                 DataTypes::content,
                 JsonValue::String(original.get_data(DataTypes::content).unwrap().to_string()),
-            );
-
-        // include sender_id if the original had one
-        let sender = original.get_sender();
-        cv.add_data(DataTypes::sender_id, JsonValue::String(sender.to_string()))
+            )
     }
 }

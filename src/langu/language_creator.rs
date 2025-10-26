@@ -29,7 +29,18 @@ pub fn create_languages() {
     general_texts.insert("user_id", "USER ID: {}");
     general_texts.insert("user_ids", "USER IDS: {}");
     general_texts.insert("setup_completed", "Launched");
-
+    general_texts.insert(
+        "community_active",
+        "Communities active on ws://0.0.0.0:{}/community/...",
+    );
+    general_texts.insert(
+        "community_start_error",
+        "Failed to start community socket on port {}!",
+    );
+    general_texts.insert(
+        "community_start_error_admin",
+        "Failed to start community socket on port {}! Run with admin privileges",
+    );
     // DEBUG
     debug_messages.insert("", "");
     save_file(
