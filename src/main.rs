@@ -59,6 +59,7 @@ async fn main() {
     }
 
     if !sb.is_empty() {
+        {}
         sb.remove(0);
         sb = sb + ",";
     }

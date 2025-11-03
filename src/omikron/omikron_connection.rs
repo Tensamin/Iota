@@ -54,7 +54,7 @@ impl OmikronConnection {
     /// Connect loop with retry
     pub async fn connect(&self) {
         loop {
-            match connect_async("wss://tensamin.methanium.net/ws/iota/").await {
+            match connect_async("wss://app.tensamin.net/ws/iota/").await {
                 Ok((ws_stream, _)) => {
                     let (write_half, read_half) = ws_stream.split();
                     *self.writer.lock().await = Some(write_half);

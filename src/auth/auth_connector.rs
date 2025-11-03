@@ -28,7 +28,7 @@ fn client() -> Client {
 }
 
 pub async fn unregister_user(user_id: Uuid, reset_token: &str) -> Option<bool> {
-    let url = format!("https:/auth.tensamin.methanium.net/api/delete/{}", user_id);
+    let url = format!("https:/auth.tensamin.net/api/delete/{}", user_id);
     let client = client();
 
     let mut payload = JsonValue::new_object();
@@ -47,10 +47,7 @@ pub async fn unregister_user(user_id: Uuid, reset_token: &str) -> Option<bool> {
 }
 
 pub async fn get_uuid(username: &str) -> Option<Uuid> {
-    let url = format!(
-        "https://auth.tensamin.methanium.net/api/get/uuid/{}",
-        username
-    );
+    let url = format!("https://auth.tensamin.net/api/get/uuid/{}", username);
     let client = client();
     let res = client.get(&url).send().await.ok()?;
     let json = res.text().await.ok()?;
@@ -62,7 +59,7 @@ pub async fn get_uuid(username: &str) -> Option<Uuid> {
 }
 
 pub async fn get_user(user_id: Uuid) -> Option<AuthUser> {
-    let url = format!("https://auth.tensamin.methanium.net/api/get/{}", user_id);
+    let url = format!("https://auth.tensamin.net/api/get/{}", user_id);
     let client = client();
     let res = client.get(&url).send().await.ok()?;
     let json = res.text().await.ok()?;
@@ -101,7 +98,7 @@ pub async fn get_user(user_id: Uuid) -> Option<AuthUser> {
 }
 
 pub async fn get_register() -> Option<Uuid> {
-    let url = "https://auth.tensamin.methanium.net/api/register/init".to_string();
+    let url = "https://auth.tensamin.net/api/register/init".to_string();
     let client = client();
     let res = client.get(&url).send().await.ok()?;
     let json = res.text().await.ok()?;
@@ -111,7 +108,7 @@ pub async fn get_register() -> Option<Uuid> {
 }
 
 pub async fn complete_register(user_profile: &UserProfile, iota_id: &str) -> bool {
-    let url = "https://auth.tensamin.methanium.net/api/register/complete";
+    let url = "https://auth.tensamin.net/api/register/complete";
     let client = client();
 
     let mut payload = JsonValue::new_object();
@@ -139,7 +136,7 @@ pub async fn complete_register(user_profile: &UserProfile, iota_id: &str) -> boo
 
 pub async fn migrate_user(user_profile: &mut UserProfile) -> bool {
     let url = format!(
-        "https://auth.tensamin.methanium.net/api/change/iota-id/{}",
+        "https://auth.tensamin.net/api/change/iota-id/{}",
         user_profile.user_id
     );
     let client = client();

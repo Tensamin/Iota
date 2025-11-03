@@ -1,5 +1,8 @@
 use crate::{
-    communities::{community::Community, interactables::interactable::Interactable},
+    communities::{
+        community::Community, community_connection::CommunityConnection,
+        interactables::interactable::Interactable,
+    },
     data::communication::{CommunicationType, CommunicationValue, DataTypes},
     gui::log_panel::log_message,
     util::file_util::{get_children, load_file, save_file},
@@ -7,9 +10,13 @@ use crate::{
 use aes_gcm::aead::Payload;
 use axum::Json;
 use json::{JsonValue, array, object};
-use std::any::Any;
-use std::fs::{self, File};
+use rustls::ClientConnection;
 use std::sync::Arc;
+use std::{any::Any, collections::HashMap};
+use std::{
+    fs::{self, File},
+    pin::Pin,
+};
 use uuid::Uuid;
 pub struct TextChat {
     name: String,
@@ -183,35 +190,61 @@ impl Interactable for TextChat {
         JsonValue::new_object()
     }
     fn run_function(&self, cv: CommunicationValue) -> CommunicationValue {
-        let payload = cv.get_data(DataTypes::payload).unwrap();
-        if cv.get_data(DataTypes::function).unwrap().as_str().unwrap() == "get_messages" {
-            let amount = payload["amount"].as_i64().unwrap();
-            let loaded_messages = payload["loaded_messages"].as_i64().unwrap();
-            let messages = self.get_messages(loaded_messages, amount);
-            let mut payload = JsonValue::new_object();
-            payload["messages"] = messages;
-            return CommunicationValue::new(CommunicationType::function)
-                .with_id(cv.get_id())
-                .add_data_str(DataTypes::name, self.name.clone())
-                .add_data_str(DataTypes::path, self.path.clone())
-                .add_data_str(DataTypes::result, "message_chunk".to_string())
-                .add_data(DataTypes::payload, payload);
-        }
-        if cv.get_data(DataTypes::function).unwrap().as_str().unwrap() == "send_message" {
-            let message = payload["message"].as_str().unwrap();
-            let milliseconds_timestamp: u128 = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_millis();
-            self.add_message(milliseconds_timestamp, cv.get_sender().unwrap(), message);
-            return CommunicationValue::new(CommunicationType::function)
-                .with_id(cv.get_id())
-                .add_data_str(DataTypes::name, self.name.clone())
-                .add_data_str(DataTypes::path, self.path.clone())
-                .add_data_str(DataTypes::result, "message_received".to_string())
-                .add_data(DataTypes::payload, JsonValue::new_object());
-        }
-        CommunicationValue::new(CommunicationType::error).with_id(cv.get_id())
+        let ret: Pin<Box<dyn Future<Output = CommunicationValue> + Send>> = Box::pin(async move {
+            let payload = cv.get_data(DataTypes::payload).unwrap();
+            if cv.get_data(DataTypes::function).unwrap().as_str().unwrap() == "get_messages" {
+                let amount = payload["amount"].as_i64().unwrap();
+                let loaded_messages = payload["loaded_messages"].as_i64().unwrap();
+                let messages = self.get_messages(loaded_messages, amount).clone();
+                let mut payload = JsonValue::new_object();
+                payload["messages"] = messages;
+                return CommunicationValue::new(CommunicationType::function)
+                    .with_id(cv.get_id())
+                    .add_data_str(DataTypes::name, self.name.clone())
+                    .add_data_str(DataTypes::path, self.path.clone())
+                    .add_data_str(DataTypes::result, "message_chunk".to_string())
+                    .add_data(DataTypes::payload, payload);
+            }
+            if cv.get_data(DataTypes::function).unwrap().as_str().unwrap() == "send_message" {
+                let message = payload["message"].as_str().unwrap();
+                let milliseconds_timestamp: u128 = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis();
+                self.add_message(milliseconds_timestamp, cv.get_sender().unwrap(), message);
+
+                let mut distribution_payload = JsonValue::new_object();
+                distribution_payload["message"] = JsonValue::String(message.to_string());
+                distribution_payload["sender_id"] =
+                    JsonValue::String(cv.get_sender().unwrap().to_string());
+                distribution_payload["send_time"] =
+                    JsonValue::String(milliseconds_timestamp.to_string());
+                let distribution = CommunicationValue::new(CommunicationType::update)
+                    .with_id(cv.get_id())
+                    .add_data_str(DataTypes::name, self.name.clone())
+                    .add_data_str(DataTypes::path, self.path.clone())
+                    .add_data_str(DataTypes::result, "message_live".to_string())
+                    .add_data(DataTypes::payload, distribution_payload);
+
+                let connections: HashMap<Uuid, Vec<Arc<CommunityConnection>>> =
+                    self.get_community().get_connections().await.clone();
+
+                for con in connections.values() {
+                    for c in con {
+                        let cd: &Arc<CommunityConnection> = c;
+                        cd.send_message(&distribution).await;
+                    }
+                }
+                return CommunicationValue::new(CommunicationType::function)
+                    .with_id(cv.get_id())
+                    .add_data_str(DataTypes::name, self.name.clone())
+                    .add_data_str(DataTypes::path, self.path.clone())
+                    .add_data_str(DataTypes::result, "message_received".to_string())
+                    .add_data(DataTypes::payload, JsonValue::new_object());
+            }
+            CommunicationValue::new(CommunicationType::error).with_id(cv.get_id())
+        });
+        CommunicationValue::new(CommunicationType::error)
     }
     fn to_json(&self) -> JsonValue {
         let mut v = JsonValue::new_object();

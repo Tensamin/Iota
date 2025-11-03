@@ -4,8 +4,8 @@ use crate::{
 };
 use axum::Json;
 use json::JsonValue;
-use std::any::Any;
 use std::sync::Arc;
+use std::{any::Any, pin::Pin};
 
 pub type InteractableFactory = fn() -> Box<dyn Interactable>;
 
