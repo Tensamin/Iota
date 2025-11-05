@@ -1,7 +1,5 @@
 use crate::communities::interactables::category::Category;
 use crate::communities::interactables::registry;
-use crate::communities::interactables::text_chat::TextChat;
-use crate::communities::interactables::voice_chat::VoiceChat;
 use crate::communities::{
     community_connection::CommunityConnection, interactables::interactable::Interactable,
 };
@@ -12,8 +10,6 @@ use json::JsonValue;
 use json::object::Object;
 use rand::RngCore;
 use rand_core::OsRng;
-use ratatui::text;
-use serde::de::value::StringDeserializer;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -127,7 +123,7 @@ impl Community {
         cv: &CommunicationValue,
     ) -> CommunicationValue {
         if path.is_empty() {
-            let mut target_interactables = &self.interactables.read().await.clone();
+            let target_interactables = &self.interactables.read().await.clone();
             for interactable in target_interactables.iter() {
                 if interactable.get_name() == name {
                     if interactable.get_codec() == "category" {
@@ -183,10 +179,10 @@ impl Community {
 
             let mut permissions = JsonValue::new_array();
             for perm in self.permissions.get(user).unwrap() {
-                permissions.push(perm.to_string());
+                if let Ok(_) = permissions.push(perm.to_string()) {}
             }
 
-            data.insert("permissions", permissions);
+            if let Ok(_) = data.insert("permissions", permissions) {}
             user_data.insert(&user.to_string(), data);
         }
         file_util::save_file(
@@ -213,7 +209,7 @@ pub async fn load(name: &String) -> Option<Arc<Community>> {
         let (str, json): (&str, &JsonValue) = user;
         let perms_j = &json["permissions"];
         let perms = Vec::new();
-        for i in perms_j.entries() {
+        for _ in perms_j.entries() {
             // let perm_j = i.as_str().unwrap();
             // perms.push(perm_j.to_string());
         }
@@ -225,11 +221,12 @@ pub async fn load(name: &String) -> Option<Arc<Community>> {
     }
 
     let role_data = file_util::load_file(&format!("communities/{}/", name), "roles.json");
-    if let Ok(user_json) = json::parse(&role_data) {
+    let roles: HashMap<String, Vec<String>> = HashMap::new();
+    if let Ok(_) = json::parse(&role_data) {
+        // Fill roles
     } else {
         return None;
     };
-    let mut roles: HashMap<String, Vec<String>> = HashMap::new();
 
     let community = Community {
         name: json_content["name"].as_str().unwrap().to_string(),
@@ -266,15 +263,5 @@ pub async fn load(name: &String) -> Option<Arc<Community>> {
             comarc.add_interactable(Arc::new(interactable)).await;
         }
     }
-    let mut text_chat: TextChat = TextChat::new();
-    text_chat.load(
-        comarc.clone(),
-        String::new(),
-        String::from("a"),
-        &JsonValue::Null,
-    );
-
-    comarc.add_interactable(Arc::new(Box::new(text_chat))).await;
-
     Some(comarc)
 }

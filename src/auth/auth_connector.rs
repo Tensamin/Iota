@@ -51,7 +51,7 @@ pub async fn get_uuid(username: &str) -> Option<Uuid> {
     let client = client();
     let res = client.get(&url).send().await.ok()?;
     let json = res.text().await.ok()?;
-    let mut cv = CommunicationValue::from_json(&json);
+    let cv = CommunicationValue::from_json(&json);
     if !cv.is_type(CommunicationType::success) {
         return None;
     }
@@ -64,7 +64,7 @@ pub async fn get_user(user_id: Uuid) -> Option<AuthUser> {
     let res = client.get(&url).send().await.ok()?;
     let json = res.text().await.ok()?;
 
-    let mut cv = CommunicationValue::from_json(&json);
+    let cv = CommunicationValue::from_json(&json);
     if cv.comm_type != CommunicationType::success {
         return None;
     }
@@ -103,7 +103,7 @@ pub async fn get_register() -> Option<Uuid> {
     let res = client.get(&url).send().await.ok()?;
     let json = res.text().await.ok()?;
 
-    let mut cv = CommunicationValue::from_json(&json);
+    let cv = CommunicationValue::from_json(&json);
     Uuid::parse_str(&*cv.get_data(DataTypes::user_id).unwrap().to_string()).ok()
 }
 

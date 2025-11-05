@@ -1,9 +1,7 @@
 use crate::APP_STATE;
 use crate::data::communication::{CommunicationType, CommunicationValue, DataTypes};
 use crate::omikron::omikron_connection::OmikronConnection;
-use json::JsonValue;
 use json::number::Number;
-use std::sync::Arc;
 use tokio::time::Instant;
 use uuid::Uuid;
 

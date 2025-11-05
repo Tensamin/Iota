@@ -45,11 +45,7 @@ impl ConfigUtil {
 
     pub fn update(&mut self) {
         if self.unique {
-            let _ = self.save();
+            save_file("", "config.json", &self.config.to_string());
         }
-    }
-
-    pub fn save(&self) {
-        save_file("", "config.json", &self.config.to_string());
     }
 }

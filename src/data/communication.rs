@@ -393,14 +393,6 @@ impl CommunicationValue {
             data,
         }
     }
-    pub fn ack_message(message_id: Uuid, sender: Uuid) -> CommunicationValue {
-        let mut cv = CommunicationValue::new(CommunicationType::message).with_id(message_id);
-
-        if let s = sender {
-            cv = cv.add_data(DataTypes::send_time, JsonValue::String(s.to_string()));
-        }
-        cv
-    }
     pub fn forward_to_other_iota(original: &mut CommunicationValue) -> CommunicationValue {
         let receiver = Uuid::from_str(
             &*original
@@ -420,7 +412,8 @@ impl CommunicationValue {
         CommunicationValue::new(CommunicationType::message_other_iota)
             .with_id(original.get_id())
             .with_receiver(receiver.unwrap())
-            .add_data(                DataTypes::receiver_id,
+            .add_data(
+                DataTypes::receiver_id,
                 JsonValue::String(receiver.unwrap().to_string()),
             )
             .with_sender(sender.unwrap())

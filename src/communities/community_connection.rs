@@ -8,7 +8,6 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use futures::SinkExt;
 use hkdf::Hkdf;
 use json::JsonValue;
-use json::object::Object;
 use rand::{Rng, distributions::Alphanumeric};
 use sha2::Sha256;
 use std::sync::Arc;
@@ -61,7 +60,8 @@ impl CommunityConnection {
     }
 
     pub async fn handle_message(self: Arc<Self>, message: String) {
-        let cv = CommunicationValue::from_json(&message);
+        let cv =
+            CommunicationValue::from_json(&message).with_sender(self.get_user_id().await.unwrap());
 
         if cv.is_type(CommunicationType::identification) && !self.is_identified().await {
             self.handle_identification(cv).await;
@@ -394,7 +394,7 @@ impl CommunityConnection {
     }
     pub async fn handle_close(&self) {
         if self.is_identified().await {
-            if let Some(user_id) = self.get_user_id().await {
+            if let Some(_) = self.get_user_id().await {
                 todo!();
             }
         }

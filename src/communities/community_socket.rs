@@ -1,6 +1,4 @@
-use crate::communities::{
-    community::Community, community_connection::CommunityConnection, community_manager,
-};
+use crate::communities::{community_connection::CommunityConnection, community_manager};
 use futures::StreamExt;
 use std::sync::Arc;
 use tokio::net::TcpListener;
@@ -23,7 +21,7 @@ pub async fn start(port: u16) -> bool {
                 };
                 let ws_stream = match accept_hdr_async(stream, callback).await {
                     Ok(ws) => ws,
-                    Err(e) => {
+                    Err(_) => {
                         return;
                     }
                 };
@@ -48,7 +46,7 @@ pub async fn start(port: u16) -> bool {
                                         return;
                                     }
                                 }
-                                Some(Err(e)) => {
+                                Some(Err(_)) => {
                                     community_conn.handle_close().await;
                                     return;
                                 }

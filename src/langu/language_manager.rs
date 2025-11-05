@@ -39,7 +39,7 @@ pub fn from_key(key: &str) -> String {
 pub fn format(key: &str, args: &[&str]) -> String {
     let message = from_key(key);
     let mut formatted = String::new();
-    let mut parts = message.split("{}");
+    let parts = message.split("{}");
     for (i, part) in parts.enumerate() {
         formatted.push_str(part);
         if i < args.len() {

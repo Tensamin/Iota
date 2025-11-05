@@ -7,16 +7,10 @@ use crate::{
     gui::log_panel::log_message,
     util::file_util::{get_children, load_file, save_file},
 };
-use aes_gcm::aead::Payload;
-use axum::Json;
 use json::{JsonValue, array, object};
-use rustls::ClientConnection;
 use std::sync::Arc;
 use std::{any::Any, collections::HashMap};
-use std::{
-    fs::{self, File},
-    pin::Pin,
-};
+use std::{fs, pin::Pin};
 use uuid::Uuid;
 pub struct TextChat {
     name: String,
@@ -190,7 +184,7 @@ impl Interactable for TextChat {
         JsonValue::new_object()
     }
     fn run_function(&self, cv: CommunicationValue) -> CommunicationValue {
-        let ret: Pin<Box<dyn Future<Output = CommunicationValue> + Send>> = Box::pin(async move {
+        let _: Pin<Box<dyn Future<Output = CommunicationValue> + Send>> = Box::pin(async move {
             let payload = cv.get_data(DataTypes::payload).unwrap();
             if cv.get_data(DataTypes::function).unwrap().as_str().unwrap() == "get_messages" {
                 let amount = payload["amount"].as_i64().unwrap();
@@ -247,10 +241,9 @@ impl Interactable for TextChat {
         CommunicationValue::new(CommunicationType::error)
     }
     fn to_json(&self) -> JsonValue {
-        let mut v = JsonValue::new_object();
-        v
+        JsonValue::new_object()
     }
-    fn load(&mut self, community: Arc<Community>, path: String, name: String, json: &JsonValue) {
+    fn load(&mut self, community: Arc<Community>, path: String, name: String, _: &JsonValue) {
         self.community = community;
         self.name = name;
         self.path = path;

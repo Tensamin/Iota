@@ -1,11 +1,7 @@
-use crate::{
-    communities::community::Community,
-    data::communication::{CommunicationType, CommunicationValue},
-};
-use axum::Json;
+use crate::{communities::community::Community, data::communication::CommunicationValue};
 use json::JsonValue;
+use std::any::Any;
 use std::sync::Arc;
-use std::{any::Any, pin::Pin};
 
 pub type InteractableFactory = fn() -> Box<dyn Interactable>;
 

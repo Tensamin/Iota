@@ -4,16 +4,8 @@ use aes_gcm::{
     aead::{Aead, KeyInit, OsRng},
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use base64::{decode as b64_decode, encode as b64_encode};
-use hex;
-use json::JsonValue;
-use once_cell::sync::Lazy;
-use rand::Rng;
 use rand_core::RngCore;
 use sha2::{Digest, Sha256};
-use std::io;
-use std::sync::Mutex;
-use uuid::Uuid;
 use x448::{PublicKey, Secret, SharedSecret}; // from the `x448` crate
 
 /// Errors for crypto operations
@@ -47,20 +39,20 @@ pub fn generate_keypair() -> KeyPair {
 }
 
 pub fn public_key_to_base64(pubkey: &PublicKey) -> String {
-    b64_encode(pubkey.as_bytes().as_ref())
+    STANDARD.encode(pubkey.as_bytes().as_ref())
 }
 
 pub fn secret_key_to_base64(secret: &Secret) -> String {
-    b64_encode(secret.as_bytes().as_ref())
+    STANDARD.encode(secret.as_bytes().as_ref())
 }
 
 pub fn load_public_key(base64_pub: &str) -> Option<PublicKey> {
-    let bytes = b64_decode(base64_pub).unwrap();
+    let bytes = STANDARD.decode(base64_pub).unwrap();
     PublicKey::from_bytes(&bytes)
 }
 
 pub fn load_secret_key(base64_secret: &str) -> Option<Secret> {
-    let bytes = b64_decode(base64_secret).unwrap();
+    let bytes = STANDARD.decode(base64_secret).unwrap();
     Secret::from_bytes(&bytes)
 }
 
@@ -95,7 +87,7 @@ pub fn encrypt(
     let mut out = Vec::with_capacity(nonce_bytes.len() + ciphertext.len());
     out.extend_from_slice(&nonce_bytes);
     out.extend_from_slice(&ciphertext);
-    Ok(b64_encode(&out))
+    Ok(STANDARD.encode(&out))
 }
 
 pub fn decrypt(
@@ -111,7 +103,7 @@ pub fn decrypt(
     let key_bytes = derive_aes_key(&shared);
     let cipher = Aes256Gcm::new_from_slice(&key_bytes).expect("Key length should be correct");
 
-    let encrypted = b64_decode(encrypted_base64)?;
+    let encrypted = STANDARD.decode(encrypted_base64)?;
     if encrypted.len() < 12 {
         return Err(CryptoError::DecryptionError(aes_gcm::Error));
     }

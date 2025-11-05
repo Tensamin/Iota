@@ -29,8 +29,8 @@ use crate::util::config_util::CONFIG;
 
 pub static APP_STATE: LazyLock<Arc<Mutex<AppState>>> =
     LazyLock::new(|| Arc::new(Mutex::new(AppState::new())));
-
-#[tokio::main]
+#[tokio::main(flavor = "multi_thread", worker_threads = 8)]
+#[allow(unused_must_use, dead_code)]
 async fn main() {
     // EULA
     //if !eula_checker::check_eula() {
@@ -38,21 +38,31 @@ async fn main() {
     //    return;
     //}
 
+    // LANGUAGE PACK
+    if let Err(e) = language_creator::create_languages() {
+        println!("Language pack creation failed: {}", e);
+        return;
+    }
+
     // UI
     log_panel::setup();
-    ratatui_interface::launch();
-    // LANGUAGE PACK
-    language_creator::create_languages();
+    if let Err(e) = ratatui_interface::launch() {
+        println!("Ui launch failed: {}", &e.to_string());
+        return;
+    }
 
     // BASIC CONFIGURATION
     CONFIG.lock().unwrap().load();
     if !CONFIG.lock().unwrap().config.has_key("iota_id") {
         CONFIG.lock().unwrap().change("iota_id", Uuid::new_v4());
-        CONFIG.lock().unwrap().save();
+        CONFIG.lock().unwrap().update();
     }
 
     // USER MANAGEMENT
-    user_manager::load_users().await;
+
+    if let Err(_) = user_manager::load_users().await {
+        log_message_trans("user_load_failed");
+    }
     let mut sb = "".to_string();
     for up in user_manager::get_users() {
         sb = sb + "," + &up.user_id.to_string().as_str();

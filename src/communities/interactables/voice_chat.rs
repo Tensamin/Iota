@@ -72,10 +72,10 @@ impl Interactable for VoiceChat {
         CommunicationValue::new(CommunicationType::error)
     }
     fn to_json(&self) -> JsonValue {
-        let mut v = JsonValue::new_object();
+        let v = JsonValue::new_object();
         v
     }
-    fn load(&mut self, community: Arc<Community>, path: String, name: String, json: &JsonValue) {
+    fn load(&mut self, community: Arc<Community>, path: String, name: String, _json: &JsonValue) {
         self.community = community;
         self.name = name;
         self.path = path;
