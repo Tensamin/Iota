@@ -1,14 +1,12 @@
-use crate::{
-    communities::community::Community,
-    data::communication::{CommunicationType, CommunicationValue},
-};
-use axum::Json;
+use crate::{communities::community::Community, data::communication::CommunicationValue};
+use async_trait::async_trait;
 use json::JsonValue;
+use std::any::Any;
 use std::sync::Arc;
-use std::{any::Any, pin::Pin};
 
 pub type InteractableFactory = fn() -> Box<dyn Interactable>;
 
+#[async_trait]
 pub trait Interactable: Send + Sync + Any {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
@@ -20,7 +18,7 @@ pub trait Interactable: Send + Sync + Any {
     fn set_path(&mut self, path: String);
     fn get_community(&self) -> &Arc<Community>;
     fn set_community(&mut self, community: Arc<Community>);
-    fn run_function(&self, cv: CommunicationValue) -> CommunicationValue;
+    async fn run_function(&self, cv: CommunicationValue) -> CommunicationValue;
     fn get_data(&self) -> JsonValue;
     fn to_json(&self) -> JsonValue;
     fn load(&mut self, community: Arc<Community>, path: String, name: String, json: &JsonValue);

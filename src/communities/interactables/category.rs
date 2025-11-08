@@ -2,6 +2,7 @@ use crate::{
     communities::{community::Community, interactables::interactable::Interactable},
     data::communication::{CommunicationType, CommunicationValue},
 };
+use async_trait::async_trait;
 use axum::Json;
 use json::JsonValue;
 use std::any::Any;
@@ -48,6 +49,7 @@ impl Category {
     }
 }
 
+#[async_trait]
 impl Interactable for Category {
     fn as_any(&self) -> &dyn Any {
         self
@@ -89,7 +91,7 @@ impl Interactable for Category {
         }
         v
     }
-    fn run_function(&self, cv: CommunicationValue) -> CommunicationValue {
+    async fn run_function(&self, cv: CommunicationValue) -> CommunicationValue {
         CommunicationValue::new(CommunicationType::error)
     }
     fn to_json(&self) -> JsonValue {

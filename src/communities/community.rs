@@ -89,6 +89,20 @@ impl Community {
             .await
             .insert(other.get_user_id().await.unwrap(), vec);
     }
+    pub async fn remove_connection(self: &Arc<Self>, other: Arc<CommunityConnection>) {
+        let mut vec = self
+            .connections
+            .read()
+            .await
+            .get(&other.get_user_id().await.unwrap())
+            .cloned()
+            .unwrap_or_default();
+        vec.retain(|conn| !Arc::ptr_eq(conn, &other));
+        self.connections
+            .write()
+            .await
+            .insert(other.get_user_id().await.unwrap(), vec);
+    }
     pub async fn get_connections(&self) -> HashMap<Uuid, Vec<Arc<CommunityConnection>>> {
         self.connections.read().await.clone()
     }
@@ -127,13 +141,14 @@ impl Community {
         cv: &CommunicationValue,
     ) -> CommunicationValue {
         if path.is_empty() {
-            let mut target_interactables = &self.interactables.read().await.clone();
+            let target_interactables = &self.interactables.read().await.clone();
             for interactable in target_interactables.iter() {
                 if interactable.get_name() == name {
                     if interactable.get_codec() == "category" {
                         return CommunicationValue::new(CommunicationType::error);
                     } else {
-                        return interactable.run_function(cv.clone());
+                        // cannot move a value of type dyn Interactable the size of dyn Interactable cannot be statically determined (rustc E0161)
+                        return interactable.run_function(cv.clone()).await;
                     }
                 }
             }
@@ -144,10 +159,12 @@ impl Community {
                     if interactable.get_codec() == "category" {
                         let category: &Category =
                             interactable.as_any().downcast_ref::<Category>().unwrap();
+                        // cannot move a value of type dyn Interactable the size of dyn Interactable cannot be statically determined (rustc E0161)
                         return category
                             .get_child(path.to_string(), name.to_string())
                             .unwrap()
-                            .run_function(cv.clone());
+                            .run_function(cv.clone())
+                            .await;
                     } else {
                         return CommunicationValue::new(CommunicationType::error);
                     }

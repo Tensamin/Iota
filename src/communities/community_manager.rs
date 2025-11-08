@@ -5,7 +5,6 @@ use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use uuid::Uuid;
 
 pub static COMMUNITY_REGISTRY: Lazy<Arc<Mutex<HashMap<String, Arc<Community>>>>> =
     Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));

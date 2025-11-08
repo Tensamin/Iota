@@ -7,6 +7,7 @@ name = "Iota"
 version = "0.1.0"
 dependencies = [
  "aes-gcm",
+ "async-trait",
  "axum",
  "base64",
  "bytes",
@@ -25,6 +26,7 @@ dependencies = [
  "rand",
  "rand_core 0.6.4",
  "ratatui",
+ "reactive-rs",
  "reqwest",
  "rustls",
  "serde",
@@ -103,6 +105,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "819e7219dbd41043ac279b19830f2efc897156490d7fd6ea916720117ee66311"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "async-trait"
+version = "0.1.89"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9035ad2d096bed7955a320ee7e2230574d28fd3c3a0f186cbea1ff3c7eed5dbb"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
@@ -1316,6 +1329,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "mach"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "86dd2487cdfea56def77b88438a2c915fb45113c5319bfe7e14306ca4cd0b0e1"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "matchit"
 version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1677,6 +1699,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "reactive-rs"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dee41fe079cafa6f6d12316ce44a1530aebcfb21b58e0face916dcbf19d47eab"
+dependencies = [
+ "slice-deque",
+]
+
+[[package]]
 name = "redox_syscall"
 version = "0.5.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1990,6 +2021,17 @@ name = "slab"
 version = "0.4.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a2ae44ef20feb57a68b23d846850f861394c2e02dc425a50098ae8c90267589"
+
+[[package]]
+name = "slice-deque"
+version = "0.1.16"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d39fca478d10e201944a8e21f4393d6bfe38fa3b16a152050e4d097fe2bbf494"
+dependencies = [
+ "libc",
+ "mach",
+ "winapi",
+]
 
 [[package]]
 name = "smallvec"

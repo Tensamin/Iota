@@ -3,7 +3,6 @@ use crate::communities::interactables::category::Category;
 use crate::communities::interactables::interactable::{Interactable, InteractableFactory};
 use crate::communities::interactables::text_chat::TextChat;
 use crate::communities::interactables::voice_chat::VoiceChat;
-use crate::gui::log_panel;
 use crate::util::file_util;
 use json::JsonValue;
 use once_cell::sync::Lazy;

@@ -1,28 +1,46 @@
 use crate::{
     communities::{community::Community, interactables::interactable::Interactable},
-    data::communication::{CommunicationType, CommunicationValue},
+    data::communication::{CommunicationType, CommunicationValue, DataTypes},
 };
+use async_trait::async_trait;
 use json::JsonValue;
-use std::any::Any;
 use std::sync::Arc;
+use std::{any::Any, sync::RwLock};
 use uuid::Uuid;
 pub enum CallUserState {
     Active,
     Muted,
     Deafed,
 }
+impl CallUserState {
+    pub fn parse(state: &str) -> CallUserState {
+        match state {
+            "active" => CallUserState::Active,
+            "muted" => CallUserState::Muted,
+            "deafed" => CallUserState::Deafed,
+            _ => CallUserState::Active,
+        }
+    }
+    pub fn to_string(&self) -> String {
+        match self {
+            CallUserState::Active => "active".to_string(),
+            CallUserState::Muted => "muted".to_string(),
+            CallUserState::Deafed => "deafed".to_string(),
+        }
+    }
+}
 
 pub struct CallUser {
-    user_id: Uuid,
-    user_state: CallUserState,
-    streaming: bool,
+    pub user_id: Uuid,
+    pub user_state: CallUserState,
+    pub streaming: bool,
 }
 
 pub struct VoiceChat {
     name: String,
     path: String,
     community: Arc<Community>,
-    users: Vec<CallUser>,
+    users: RwLock<Vec<CallUser>>,
 }
 impl VoiceChat {
     pub fn new() -> VoiceChat {
@@ -30,10 +48,28 @@ impl VoiceChat {
             name: String::new(),
             path: String::new(),
             community: Arc::new(Community::new()),
-            users: Vec::new(),
+            users: RwLock::new(Vec::new()),
+        }
+    }
+    pub fn update_user_state(
+        self: Arc<Self>,
+        user_id: Uuid,
+        state: CallUserState,
+        streaming: bool,
+    ) {
+        if let Some(user) = self
+            .users
+            .write()
+            .unwrap()
+            .iter_mut()
+            .find(|u| u.user_id == user_id)
+        {
+            user.user_state = state;
+            user.streaming = streaming;
         }
     }
 }
+#[async_trait]
 impl Interactable for VoiceChat {
     fn as_any(&self) -> &dyn Any {
         self
@@ -66,16 +102,93 @@ impl Interactable for VoiceChat {
         String::new() + &self.path + "/" + &self.name
     }
     fn get_data(&self) -> JsonValue {
-        JsonValue::new_object()
+        /*
+        * "data": {
+                      "active_users": {
+                        "user_id": {
+                          "state": "<call_status>",
+                          "streaming": boolean
+                        },
+                        "user_id": {
+                          "state": "<call_status>",
+                          "streaming": boolean
+                         },
+                         "user_id": {
+                          "state": "<call_status>",
+                          "streaming": boolean
+                         }
+                      }
+                    }
+                  },
+        */
+        let mut data = JsonValue::new_object();
+        let mut active_users = JsonValue::new_object();
+        for user in self.users.read().unwrap().iter() {
+            let mut user_data = JsonValue::new_object();
+            let _ = user_data.insert("state", JsonValue::String(user.user_state.to_string()));
+            let _ = user_data.insert("streaming", JsonValue::Boolean(user.streaming));
+            let _ = active_users.insert(&user.user_id.to_string(), user_data);
+        }
+        let _ = data.insert("active_users", active_users);
+        data
     }
-    fn run_function(&self, cv: CommunicationValue) -> CommunicationValue {
-        CommunicationValue::new(CommunicationType::error)
+    async fn run_function(&self, cv: CommunicationValue) -> CommunicationValue {
+        let payload = cv.get_data(DataTypes::payload).unwrap();
+        let function = cv.get_data(DataTypes::function).unwrap().as_str().unwrap();
+
+        if function == "get_call" {
+            let sender_id = payload["sender_id"].as_str().unwrap();
+            let message_id = payload["message"].as_str().unwrap();
+            let send_time = payload["send_time"].as_str().unwrap();
+
+            let mut response_payload = JsonValue::new_object();
+            response_payload["sender_id"] = JsonValue::String(sender_id.to_string());
+            response_payload["message"] = JsonValue::String(message_id.to_string());
+            response_payload["send_time"] = JsonValue::String(send_time.to_string());
+
+            return CommunicationValue::new(CommunicationType::function)
+                .with_id(cv.get_id())
+                .add_data_str(DataTypes::name, self.name.clone())
+                .add_data_str(DataTypes::path, self.path.clone())
+                .add_data_str(DataTypes::result, "getting_call".to_string())
+                .add_data(DataTypes::payload, response_payload);
+        }
+
+        if function == "update_user_state" {
+            let user_id = payload["user_id"].as_str().unwrap();
+            let state = payload["state"].as_str().unwrap();
+            let streaming = payload["streaming"].as_bool().unwrap();
+
+            if let Some(user) = self
+                .users
+                .write()
+                .unwrap()
+                .iter_mut()
+                .find(|u| u.user_id == Uuid::parse_str(user_id).unwrap())
+            {
+                user.user_state = CallUserState::parse(state);
+                user.streaming = streaming;
+            }
+            let mut response_payload = JsonValue::new_object();
+            response_payload["user_id"] = JsonValue::String(user_id.to_string());
+            response_payload["state"] = JsonValue::String(state.to_string());
+            response_payload["streaming"] = JsonValue::Boolean(streaming);
+
+            return CommunicationValue::new(CommunicationType::update)
+                .with_id(cv.get_id())
+                .add_data_str(DataTypes::name, self.name.clone())
+                .add_data_str(DataTypes::path, self.path.clone())
+                .add_data_str(DataTypes::result, "user_changed".to_string())
+                .add_data(DataTypes::payload, response_payload);
+        }
+        CommunicationValue::new(CommunicationType::error).with_id(cv.get_id())
     }
+
     fn to_json(&self) -> JsonValue {
-        let mut v = JsonValue::new_object();
+        let v = JsonValue::new_object();
         v
     }
-    fn load(&mut self, community: Arc<Community>, path: String, name: String, json: &JsonValue) {
+    fn load(&mut self, community: Arc<Community>, path: String, name: String, _: &JsonValue) {
         self.community = community;
         self.name = name;
         self.path = path;

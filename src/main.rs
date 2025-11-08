@@ -52,7 +52,7 @@ async fn main() {
     }
 
     // USER MANAGEMENT
-    user_manager::load_users().await;
+    let _ = user_manager::load_users().await;
     let mut sb = "".to_string();
     for up in user_manager::get_users() {
         sb = sb + "," + &up.user_id.to_string().as_str();

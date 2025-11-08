@@ -1,6 +1,4 @@
-use crate::communities::{
-    community::Community, community_connection::CommunityConnection, community_manager,
-};
+use crate::communities::{community_connection::CommunityConnection, community_manager};
 use futures::StreamExt;
 use std::sync::Arc;
 use tokio::net::TcpListener;

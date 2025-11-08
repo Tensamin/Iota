@@ -8,7 +8,6 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use futures::SinkExt;
 use hkdf::Hkdf;
 use json::JsonValue;
-use json::object::Object;
 use rand::{Rng, distributions::Alphanumeric};
 use sha2::Sha256;
 use std::sync::Arc;
@@ -392,10 +391,16 @@ impl CommunityConnection {
         let mut session = self.session.lock().await;
         let _ = session.close(None).await;
     }
-    pub async fn handle_close(&self) {
+    pub async fn handle_close(self: Arc<Self>) {
         if self.is_identified().await {
-            if let Some(user_id) = self.get_user_id().await {
-                todo!();
+            if let Some(_) = self.get_user_id().await {
+                self.community
+                    .read()
+                    .await
+                    .as_ref()
+                    .unwrap()
+                    .remove_connection(self.clone())
+                    .await;
             }
         }
     }
