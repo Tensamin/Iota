@@ -5,7 +5,6 @@ use crate::langu::language_manager::format;
 use crate::langu::language_manager::from_key;
 
 use crate::data::communication::{CommunicationType, CommunicationValue, DataTypes};
-use json::Array;
 use ratatui::widgets::canvas::{Canvas, Line};
 use ratatui::{
     layout::{Constraint, Direction, Layout},
@@ -66,7 +65,7 @@ fn downsample_to_fit_width(data: &[(f64, f64)], width: u16) -> Vec<(f64, f64)> {
             .first()
             .map(|(x, _)| x - (dx * pad_len as f64))
             .unwrap_or(0.0);
-        let y = data.first().map(|(_, y)| *y).unwrap_or(0.0);
+        let _ = data.first().map(|(_, y)| *y).unwrap_or(0.0);
 
         // Fill padding with increasing x positions so they're visible
         for i in 0..pad_len {
@@ -96,8 +95,8 @@ pub fn setup() {
             }
             let ram = (sys.used_memory() as f64 / sys.total_memory() as f64) * 100.0;
 
-            let mut total_received = 0u64;
-            let mut total_transmitted = 0u64;
+            let total_received = 0u64;
+            let total_transmitted = 0u64;
 
             let delta_received = if last_total_received == 0 {
                 0

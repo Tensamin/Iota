@@ -1,5 +1,6 @@
 use crate::data::communication::{CommunicationType, CommunicationValue, DataTypes};
-use crate::gui::log_panel::{log_cv, log_message};
+use crate::gui::log_panel::{log_cv, log_message, log_message_trans};
+use crate::langu::language_manager::format;
 use crate::users::contact::Contact;
 use crate::users::user_community_util::UserCommunityUtil;
 use crate::util::chat_files;
@@ -16,6 +17,7 @@ use tokio::time::{Duration, Instant, sleep};
 use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream, connect_async, tungstenite::protocol::Message,
 };
+use tungstenite::Utf8Bytes;
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -71,8 +73,8 @@ impl OmikronConnection {
                     *self.pingpong.lock().await = Some(handle);
                     break;
                 }
-                Err(_) => {
-                    log_message("CONNECTION FAILED");
+                Err(e) => {
+                    log_message(format("connection_failed", &[&e.to_string().as_str()]));
                     *self.is_connected.lock().await = false;
                     sleep(Duration::from_secs(2)).await;
                 }
@@ -80,7 +82,7 @@ impl OmikronConnection {
         }
     }
     pub async fn send_message(&self, msg: String) {
-        Self::send_message_static(&self.writer, msg).await;
+        Self::send_message_static(&self.writer, msg).await
     }
 
     /// Listener for all incoming messages
@@ -90,222 +92,249 @@ impl OmikronConnection {
             WebSocketStream<MaybeTlsStream<TcpStream>>,
         >,
     ) {
-        let waiting = self.waiting.clone();
-        let writer = self.writer.clone();
-        let is_connected = self.is_connected.clone();
-        let sel = self.clone();
+        let waiting_out = self.waiting.clone();
+        let writer_out = self.writer.clone();
+        let is_connected_out = self.is_connected.clone();
+        let sel_out = self.clone();
         tokio::spawn(async move {
             while let Some(msg) = read_half.next().await {
-                match msg {
-                    Ok(Message::Close(Some(frame))) => {
-                        log_message(format!("[Omikron] Closed: {:?}", frame));
-                        *is_connected.lock().await = false;
-                        break;
-                    }
-                    Ok(Message::Text(text)) => {
-                        let mut cv = CommunicationValue::from_json(&text);
-                        if cv.is_type(CommunicationType::pong) {
-                            sel.handle_pong(&cv, true).await;
-                            continue;
+                let waiting = waiting_out.clone();
+                let writer = writer_out.clone();
+                let is_connected = is_connected_out.clone();
+                let sel = sel_out.clone();
+                tokio::spawn(async move {
+                    match msg {
+                        Ok(Message::Close(Some(frame))) => {
+                            log_message(format!("[Omikron] Closed: {:?}", frame));
+                            *is_connected.lock().await = false;
+                            return;
                         }
-                        // ************************************************ //
-                        // Direct messages                                  //
-                        // ************************************************ //
-                        log_cv(&cv);
-                        if cv.is_type(CommunicationType::message_other_iota) {
-                            let sender_id = &cv.get_sender().unwrap();
-                            let receiver_id = &cv.get_receiver().unwrap();
+                        Ok(Message::Text(text)) => {
+                            let mut cv = CommunicationValue::from_json(&text);
+                            if cv.is_type(CommunicationType::pong) {
+                                sel.handle_pong(&cv, true).await;
+                                return;
+                            }
+                            // ************************************************ //
+                            // Direct messages                                  //
+                            // ************************************************ //
+                            log_cv(&cv);
+                            if let Some(x) = waiting.lock().await.remove(&cv.get_id()) {
+                                x(cv);
+                                return;
+                            }
+                            if cv.is_type(CommunicationType::message_other_iota) {
+                                let sender_id = &cv.get_sender().unwrap();
+                                let receiver_id = &cv.get_receiver().unwrap();
 
-                            chat_files::add_message(
-                                cv.get_data(DataTypes::send_time)
-                                    .unwrap()
-                                    .as_i64()
-                                    .unwrap_or(0) as u128,
-                                false,
-                                *receiver_id,
-                                *sender_id,
-                                cv.get_data(DataTypes::content).unwrap().as_str().unwrap(),
-                            );
-                            let response = CommunicationValue::new(CommunicationType::message_live)
-                                .with_id(cv.get_id())
-                                .with_receiver(cv.get_receiver().unwrap())
-                                .add_data(
-                                    DataTypes::send_time,
-                                    cv.get_data(DataTypes::send_time).unwrap().clone(),
-                                )
-                                .add_data(
-                                    DataTypes::message,
-                                    cv.get_data(DataTypes::content).unwrap().clone(),
-                                )
-                                .add_data(
-                                    DataTypes::sender_id,
-                                    JsonValue::String(cv.get_sender().unwrap().to_string()),
+                                chat_files::add_message(
+                                    cv.get_data(DataTypes::send_time)
+                                        .unwrap()
+                                        .as_i64()
+                                        .unwrap_or(0) as u128,
+                                    false,
+                                    *receiver_id,
+                                    *sender_id,
+                                    cv.get_data(DataTypes::content).unwrap().as_str().unwrap(),
                                 );
-                            Self::send_message_static(
-                                &writer.clone(),
-                                response.to_json().to_string(),
-                            )
-                            .await;
-                            continue;
-                        }
-
-                        if cv.is_type(CommunicationType::message_send) {
-                            /* DATA CONTAINER:
-                            "sent_by_self": true,
-                            "timestamp": unixTimestamp,
-                            "files": [ // wenn keine files dann weglassen
-                                {
-                                    "name": "<name>",
-                                    "id": "<uuid>",
-                                    "type": "[ image | image_top_right | file ]"
-                                }
-                            ],
-                            "content": "<enc markdown>"
-                            */
-                            let my_id = cv.get_sender().unwrap();
-                            let other_id = Uuid::from_str(
-                                &*cv.get_data(DataTypes::receiver_id).unwrap().to_string(),
-                            )
-                            .unwrap();
-                            chat_files::add_message(
-                                SystemTime::now()
-                                    .duration_since(UNIX_EPOCH)
-                                    .unwrap()
-                                    .as_millis() as u128,
-                                true,
-                                my_id,
-                                other_id,
-                                &*cv.get_data(DataTypes::content).unwrap().to_string(),
-                            );
-                            let ack = CommunicationValue::ack_message(cv.get_id(), my_id);
-                            Self::send_message_static(&writer.clone(), ack.to_json().to_string())
+                                let response =
+                                    CommunicationValue::new(CommunicationType::message_live)
+                                        .with_id(cv.get_id())
+                                        .with_receiver(cv.get_receiver().unwrap())
+                                        .add_data(
+                                            DataTypes::send_time,
+                                            cv.get_data(DataTypes::send_time).unwrap().clone(),
+                                        )
+                                        .add_data(
+                                            DataTypes::message,
+                                            cv.get_data(DataTypes::content).unwrap().clone(),
+                                        )
+                                        .add_data(
+                                            DataTypes::sender_id,
+                                            JsonValue::String(cv.get_sender().unwrap().to_string()),
+                                        );
+                                Self::send_message_static(
+                                    &writer.clone(),
+                                    response.to_json().to_string(),
+                                )
                                 .await;
-                            let forward = CommunicationValue::forward_to_other_iota(&mut cv);
-                            Self::send_message_static(
-                                &writer.clone(),
-                                forward.to_json().to_string(),
-                            )
-                            .await;
-                            continue;
-                        }
+                                return;
+                            }
 
-                        if cv.is_type(CommunicationType::messages_get) {
-                            let my_id = cv.get_sender().unwrap();
-                            let partner_id = Uuid::from_str(
-                                &*cv.get_data(DataTypes::user_id).unwrap().to_string(),
-                            )
-                            .unwrap();
-                            let offset = cv
-                                .get_data(DataTypes::offset)
-                                .unwrap_or(&JsonValue::Null)
-                                .to_string()
-                                .parse::<i64>()
-                                .unwrap_or(0);
-                            let amount = cv
-                                .get_data(DataTypes::amount)
-                                .unwrap_or(&JsonValue::Null)
-                                .to_string()
-                                .parse::<i64>()
-                                .unwrap_or(0);
-                            let messages =
-                                chat_files::get_messages(my_id, partner_id, offset, amount);
-                            let resp = CommunicationValue::new(CommunicationType::messages_get)
-                                .with_id(cv.get_id())
-                                .with_receiver(my_id)
-                                .add_data(DataTypes::messages, messages);
-
-                            Self::send_message_static(&writer.clone(), resp.to_json().to_string())
-                                .await;
-                            continue;
-                        }
-
-                        if cv.is_type(CommunicationType::get_chats) {
-                            let user_id = cv.get_sender().unwrap();
-                            let users = get_users(user_id);
-                            let resp = CommunicationValue::new(CommunicationType::get_chats)
-                                .with_id(cv.get_id())
-                                .with_receiver(user_id)
-                                .add_data(DataTypes::user_ids, users);
-                            Self::send_message_static(&writer.clone(), resp.to_json().to_string())
-                                .await;
-                            continue;
-                        }
-
-                        if cv.is_type(CommunicationType::add_chat) {
-                            let user_id = cv.get_sender().unwrap();
-                            let other_id = Uuid::from_str(
-                                &*cv.get_data(DataTypes::user_id).unwrap().to_string(),
-                            )
-                            .unwrap();
-                            let mut contact =
-                                get_user(user_id, other_id).unwrap_or(Contact::new(other_id)); // needs ChatsUtil + Contact
-                            contact.set_last_message_at(
-                                SystemTime::now()
-                                    .duration_since(UNIX_EPOCH)
-                                    .unwrap()
-                                    .as_millis() as i64,
-                            );
-                            mod_user(user_id, &contact);
-                            let resp = CommunicationValue::new(CommunicationType::add_chat)
-                                .with_id(cv.get_id())
-                                .with_receiver(user_id);
-                            Self::send_message_static(&writer.clone(), resp.to_json().to_string())
-                                .await;
-                            continue;
-                        }
-
-                        if cv.is_type(CommunicationType::add_community) {
-                            UserCommunityUtil::add_community(
-                                cv.get_sender().unwrap(),
-                                cv.get_data(DataTypes::community_address)
-                                    .unwrap()
-                                    .to_string(),
-                                cv.get_data(DataTypes::community_title).unwrap().to_string(),
-                                cv.get_data(DataTypes::position).unwrap().to_string(),
-                            );
-                            let resp = CommunicationValue::new(CommunicationType::add_community)
-                                .with_id(cv.get_id())
-                                .with_receiver(cv.get_sender().unwrap());
-                            Self::send_message_static(&writer.clone(), resp.to_json().to_string())
-                                .await;
-                            continue;
-                        }
-
-                        if cv.is_type(CommunicationType::get_communities) {
-                            let resp = CommunicationValue::new(CommunicationType::get_communities)
-                                .with_id(cv.get_id())
-                                .with_receiver(cv.get_sender().unwrap())
-                                .add_array(
-                                    DataTypes::communities,
-                                    UserCommunityUtil::get_communities(cv.get_sender().unwrap()),
+                            if cv.is_type(CommunicationType::message_send) {
+                                let my_id = cv.get_sender().unwrap();
+                                let other_id = Uuid::from_str(
+                                    &*cv.get_data(DataTypes::receiver_id).unwrap().to_string(),
+                                )
+                                .unwrap();
+                                chat_files::add_message(
+                                    SystemTime::now()
+                                        .duration_since(UNIX_EPOCH)
+                                        .unwrap()
+                                        .as_millis() as u128,
+                                    true,
+                                    my_id,
+                                    other_id,
+                                    &*cv.get_data(DataTypes::content).unwrap().to_string(),
                                 );
-                            Self::send_message_static(&writer.clone(), resp.to_json().to_string())
+                                let ack = CommunicationValue::new(CommunicationType::message)
+                                    .with_id(cv.get_id())
+                                    .with_receiver(my_id);
+                                Self::send_message_static(
+                                    &writer.clone(),
+                                    ack.to_json().to_string(),
+                                )
                                 .await;
-                            continue;
-                        }
+                                let forward = CommunicationValue::forward_to_other_iota(&mut cv);
+                                Self::send_message_static(
+                                    &writer.clone(),
+                                    forward.to_json().to_string(),
+                                )
+                                .await;
+                                return;
+                            }
 
-                        if cv.is_type(CommunicationType::remove_community) {
-                            UserCommunityUtil::remove_community(
-                                cv.get_sender().unwrap(),
-                                cv.get_data(DataTypes::community_address)
-                                    .unwrap()
-                                    .to_string(),
-                            ); // needs UserCommunityUtil
-                            let resp = CommunicationValue::new(CommunicationType::remove_community)
-                                .with_id(cv.get_id())
-                                .with_receiver(cv.get_sender().unwrap());
-                            Self::send_message_static(&writer.clone(), resp.to_json().to_string())
+                            if cv.is_type(CommunicationType::messages_get) {
+                                let my_id = cv.get_sender().unwrap();
+                                let partner_id = Uuid::from_str(
+                                    &*cv.get_data(DataTypes::user_id).unwrap().to_string(),
+                                )
+                                .unwrap();
+                                let offset = cv
+                                    .get_data(DataTypes::offset)
+                                    .unwrap_or(&JsonValue::Null)
+                                    .to_string()
+                                    .parse::<i64>()
+                                    .unwrap_or(0);
+                                let amount = cv
+                                    .get_data(DataTypes::amount)
+                                    .unwrap_or(&JsonValue::Null)
+                                    .to_string()
+                                    .parse::<i64>()
+                                    .unwrap_or(0);
+                                let messages =
+                                    chat_files::get_messages(my_id, partner_id, offset, amount);
+                                let resp = CommunicationValue::new(CommunicationType::messages_get)
+                                    .with_id(cv.get_id())
+                                    .with_receiver(my_id)
+                                    .add_data(DataTypes::messages, messages);
+
+                                Self::send_message_static(
+                                    &writer.clone(),
+                                    resp.to_json().to_string(),
+                                )
                                 .await;
-                            continue;
+                                return;
+                            }
+
+                            if cv.is_type(CommunicationType::get_chats) {
+                                let user_id = cv.get_sender().unwrap();
+                                let users = get_users(user_id);
+                                let resp = CommunicationValue::new(CommunicationType::get_chats)
+                                    .with_id(cv.get_id())
+                                    .with_receiver(user_id)
+                                    .add_data(DataTypes::user_ids, users);
+                                Self::send_message_static(
+                                    &writer.clone(),
+                                    resp.to_json().to_string(),
+                                )
+                                .await;
+                                return;
+                            }
+
+                            if cv.is_type(CommunicationType::add_chat) {
+                                let user_id = cv.get_sender().unwrap();
+                                let other_id = Uuid::from_str(
+                                    &*cv.get_data(DataTypes::user_id).unwrap().to_string(),
+                                )
+                                .unwrap();
+                                let mut contact =
+                                    get_user(user_id, other_id).unwrap_or(Contact::new(other_id)); // needs ChatsUtil + Contact
+                                contact.set_last_message_at(
+                                    SystemTime::now()
+                                        .duration_since(UNIX_EPOCH)
+                                        .unwrap()
+                                        .as_millis() as i64,
+                                );
+                                mod_user(user_id, &contact);
+                                let resp = CommunicationValue::new(CommunicationType::add_chat)
+                                    .with_id(cv.get_id())
+                                    .with_receiver(user_id);
+                                Self::send_message_static(
+                                    &writer.clone(),
+                                    resp.to_json().to_string(),
+                                )
+                                .await;
+                                return;
+                            }
+
+                            if cv.is_type(CommunicationType::add_community) {
+                                UserCommunityUtil::add_community(
+                                    cv.get_sender().unwrap(),
+                                    cv.get_data(DataTypes::community_address)
+                                        .unwrap()
+                                        .to_string(),
+                                    cv.get_data(DataTypes::community_title).unwrap().to_string(),
+                                    cv.get_data(DataTypes::position).unwrap().to_string(),
+                                );
+                                let resp =
+                                    CommunicationValue::new(CommunicationType::add_community)
+                                        .with_id(cv.get_id())
+                                        .with_receiver(cv.get_sender().unwrap());
+                                Self::send_message_static(
+                                    &writer.clone(),
+                                    resp.to_json().to_string(),
+                                )
+                                .await;
+                                return;
+                            }
+
+                            if cv.is_type(CommunicationType::get_communities) {
+                                let resp =
+                                    CommunicationValue::new(CommunicationType::get_communities)
+                                        .with_id(cv.get_id())
+                                        .with_receiver(cv.get_sender().unwrap())
+                                        .add_array(
+                                            DataTypes::communities,
+                                            UserCommunityUtil::get_communities(
+                                                cv.get_sender().unwrap(),
+                                            ),
+                                        );
+                                Self::send_message_static(
+                                    &writer.clone(),
+                                    resp.to_json().to_string(),
+                                )
+                                .await;
+                                return;
+                            }
+
+                            if cv.is_type(CommunicationType::remove_community) {
+                                UserCommunityUtil::remove_community(
+                                    cv.get_sender().unwrap(),
+                                    cv.get_data(DataTypes::community_address)
+                                        .unwrap()
+                                        .to_string(),
+                                ); // needs UserCommunityUtil
+                                let resp =
+                                    CommunicationValue::new(CommunicationType::remove_community)
+                                        .with_id(cv.get_id())
+                                        .with_receiver(cv.get_sender().unwrap());
+                                Self::send_message_static(
+                                    &writer.clone(),
+                                    resp.to_json().to_string(),
+                                )
+                                .await;
+                                return;
+                            }
                         }
+                        Err(e) => {
+                            log_message(format!("[Omikron] Error: {}", e));
+                            *is_connected.lock().await = false;
+                            return;
+                        }
+                        _ => {}
                     }
-                    Err(e) => {
-                        log_message(format!("[Omikron] Error: {}", e));
-                        *is_connected.lock().await = false;
-                        break;
-                    }
-                    _ => {}
-                }
+                });
             }
         });
     }
@@ -324,8 +353,12 @@ impl OmikronConnection {
     ) {
         let mut guard = writer.lock().await;
         if let Some(writer) = guard.as_mut() {
-            writer.send(Message::Text(msg)).await;
-            writer.flush().await;
+            if let Ok(_) = writer.send(Message::Text(Utf8Bytes::from(msg))).await {
+                if let Ok(_) = writer.flush().await {
+                    return;
+                }
+            }
         }
+        log_message_trans("send_message_failed");
     }
 }

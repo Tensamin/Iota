@@ -4,6 +4,10 @@ use crate::communities::community::Community;
 use crate::communities::interactables::interactable::Interactable;
 use crate::data::communication::{CommunicationType, CommunicationValue, DataTypes};
 use aes_gcm::{Aes256Gcm, KeyInit, Nonce, aead::Aead};
+use async_tungstenite::WebSocketReceiver;
+use async_tungstenite::WebSocketSender;
+use async_tungstenite::tungstenite::Utf8Bytes;
+use async_tungstenite::{WebSocketStream, tungstenite::Message};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use futures::SinkExt;
 use hkdf::Hkdf;
@@ -13,11 +17,12 @@ use sha2::Sha256;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::sync::RwLock;
-use tokio_tungstenite::{WebSocketStream, tungstenite::Message};
+use tokio_util::compat::Compat;
 use uuid::Uuid;
 use x448::PublicKey;
 pub struct CommunityConnection {
-    pub session: Arc<Mutex<WebSocketStream<tokio::net::TcpStream>>>,
+    pub sender: Arc<RwLock<WebSocketSender<Compat<tokio::net::TcpStream>>>>,
+    pub receiver: Arc<RwLock<WebSocketReceiver<Compat<tokio::net::TcpStream>>>>,
     pub user_id: Arc<RwLock<Option<Uuid>>>,
     pub community: Arc<RwLock<Option<Arc<Community>>>>,
     identified: Arc<RwLock<bool>>,
@@ -28,11 +33,13 @@ pub struct CommunityConnection {
 }
 impl CommunityConnection {
     pub fn new(
-        session: WebSocketStream<tokio::net::TcpStream>,
+        sender: WebSocketSender<Compat<tokio::net::TcpStream>>,
+        receiver: WebSocketReceiver<Compat<tokio::net::TcpStream>>,
         community: Arc<Community>,
     ) -> Arc<Self> {
         Arc::new(Self {
-            session: Arc::new(Mutex::new(session)),
+            sender: Arc::new(RwLock::new(sender)),
+            receiver: Arc::new(RwLock::new(receiver)),
             user_id: Arc::new(RwLock::new(None)),
             community: Arc::new(RwLock::new(Some(community))),
             identified: Arc::new(RwLock::new(false)),
@@ -43,9 +50,11 @@ impl CommunityConnection {
         })
     }
     pub async fn send_message(&self, message: &CommunicationValue) {
-        let mut session = self.session.lock().await;
+        let mut session = self.sender.write().await;
         session
-            .send(Message::Text(message.to_json().to_string()))
+            .send(Message::Text(Utf8Bytes::from(
+                message.to_json().to_string(),
+            )))
             .await
             .unwrap();
     }
@@ -60,7 +69,8 @@ impl CommunityConnection {
     }
 
     pub async fn handle_message(self: Arc<Self>, message: String) {
-        let cv = CommunicationValue::from_json(&message);
+        let cv =
+            CommunicationValue::from_json(&message).with_sender(self.get_user_id().await.unwrap());
 
         if cv.is_type(CommunicationType::identification) && !self.is_identified().await {
             self.handle_identification(cv).await;
@@ -388,7 +398,7 @@ impl CommunityConnection {
         self.send_message(&error).await;
     }
     pub async fn close(&self) {
-        let mut session = self.session.lock().await;
+        let mut session = self.sender.write().await;
         let _ = session.close(None).await;
     }
     pub async fn handle_close(self: Arc<Self>) {

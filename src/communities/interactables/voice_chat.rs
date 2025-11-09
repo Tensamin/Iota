@@ -188,7 +188,7 @@ impl Interactable for VoiceChat {
         let v = JsonValue::new_object();
         v
     }
-    fn load(&mut self, community: Arc<Community>, path: String, name: String, _: &JsonValue) {
+    fn load(&mut self, community: Arc<Community>, path: String, name: String, _json: &JsonValue) {
         self.community = community;
         self.name = name;
         self.path = path;

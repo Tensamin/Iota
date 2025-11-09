@@ -1,5 +1,4 @@
 pub mod community_manager;
-pub mod community_socket;
 pub mod interactables {
     pub mod category;
     pub mod interactable;

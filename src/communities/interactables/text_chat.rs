@@ -11,13 +11,9 @@ use aes_gcm::aead::Payload;
 use async_trait::async_trait;
 use axum::Json;
 use json::{JsonValue, array, object};
-use rustls::ClientConnection;
 use std::sync::Arc;
 use std::{any::Any, collections::HashMap};
-use std::{
-    fs::{self, File},
-    pin::Pin,
-};
+use std::{fs, pin::Pin};
 use uuid::Uuid;
 pub struct TextChat {
     name: String,
@@ -246,10 +242,9 @@ impl Interactable for TextChat {
         CommunicationValue::new(CommunicationType::error).with_id(cv.get_id())
     }
     fn to_json(&self) -> JsonValue {
-        let mut v = JsonValue::new_object();
-        v
+        JsonValue::new_object()
     }
-    fn load(&mut self, community: Arc<Community>, path: String, name: String, json: &JsonValue) {
+    fn load(&mut self, community: Arc<Community>, path: String, name: String, _: &JsonValue) {
         self.community = community;
         self.name = name;
         self.path = path;

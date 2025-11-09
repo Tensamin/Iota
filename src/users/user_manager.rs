@@ -75,13 +75,6 @@ pub fn get_users() -> Vec<UserProfile> {
     USERS.lock().unwrap().clone()
 }
 
-pub fn add_user(up: UserProfile) {
-    let mut users = USERS.lock().unwrap();
-    users.retain(|u| u.user_id != up.user_id);
-    users.push(up);
-    *UNIQUE.lock().unwrap() = true;
-}
-
 pub fn remove_user(user_id: Uuid) {
     let mut users = USERS.lock().unwrap();
     users.retain(|u| u.user_id != user_id);

@@ -98,11 +98,11 @@ impl Interactable for Category {
         let mut v = JsonValue::new_object();
         v["children"] = JsonValue::new_array();
         for child in &self.children {
-            v["children"].push(child.to_json());
+            let _ = v["children"].push(child.to_json());
         }
         v
     }
-    fn load(&mut self, community: Arc<Community>, path: String, name: String, json: &JsonValue) {
+    fn load(&mut self, community: Arc<Community>, path: String, name: String, _json: &JsonValue) {
         self.community = community;
         self.name = name;
         self.path = path;
