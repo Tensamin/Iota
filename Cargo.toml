@@ -20,6 +20,8 @@ hex = "*"
 hkdf = "*"
 hmac = "*"
 hyper = { version = "*", features = ["full"] }
+hyper-util = "*"
+http-body-util = "*"
 json = "*"
 native-tls = { version = "*", default-features = false }
 once_cell = "1.21.3"
@@ -37,6 +39,7 @@ sysinfo = "0.30"
 tokio = { version = "*", features = ["full"] }
 tokio-util = { version = "*", features = ["full"] }
 tokio-tungstenite = { version = "*", features = ["native-tls"] }
+tower = "*"
 tungstenite = "*"
 uuid = { version = "*", features = ["v4"] }
 walkdir = "2.5.0"

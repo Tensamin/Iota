@@ -6,23 +6,28 @@ use crate::data::communication::{CommunicationType, CommunicationValue, DataType
 use aes_gcm::{Aes256Gcm, KeyInit, Nonce, aead::Aead};
 use async_tungstenite::WebSocketReceiver;
 use async_tungstenite::WebSocketSender;
+use async_tungstenite::tungstenite::Message;
 use async_tungstenite::tungstenite::Utf8Bytes;
-use async_tungstenite::{WebSocketStream, tungstenite::Message};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use futures::SinkExt;
+use futures::stream::SplitSink;
+use futures::stream::SplitStream;
 use hkdf::Hkdf;
+use hyper::upgrade::Upgraded;
+use hyper_util::rt::TokioIo;
 use json::JsonValue;
 use rand::{Rng, distributions::Alphanumeric};
 use sha2::Sha256;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::sync::RwLock;
+use tokio_tungstenite::WebSocketStream;
 use tokio_util::compat::Compat;
 use uuid::Uuid;
 use x448::PublicKey;
 pub struct CommunityConnection {
-    pub sender: Arc<RwLock<WebSocketSender<Compat<tokio::net::TcpStream>>>>,
-    pub receiver: Arc<RwLock<WebSocketReceiver<Compat<tokio::net::TcpStream>>>>,
+    pub sender: Arc<RwLock<SplitSink<WebSocketStream<TokioIo<Upgraded>>, Message>>>,
+    pub receiver: Arc<RwLock<SplitStream<WebSocketStream<TokioIo<Upgraded>>>>>,
     pub user_id: Arc<RwLock<Option<Uuid>>>,
     pub community: Arc<RwLock<Option<Arc<Community>>>>,
     identified: Arc<RwLock<bool>>,
@@ -33,8 +38,8 @@ pub struct CommunityConnection {
 }
 impl CommunityConnection {
     pub fn new(
-        sender: WebSocketSender<Compat<tokio::net::TcpStream>>,
-        receiver: WebSocketReceiver<Compat<tokio::net::TcpStream>>,
+        sender: SplitSink<WebSocketStream<TokioIo<Upgraded>>, Message>,
+        receiver: SplitStream<WebSocketStream<TokioIo<Upgraded>>>,
         community: Arc<Community>,
     ) -> Arc<Self> {
         Arc::new(Self {
@@ -50,13 +55,9 @@ impl CommunityConnection {
         })
     }
     pub async fn send_message(&self, message: &CommunicationValue) {
-        let mut session = self.sender.write().await;
-        session
-            .send(Message::Text(Utf8Bytes::from(
-                message.to_json().to_string(),
-            )))
-            .await
-            .unwrap();
+        let mut sender = self.sender.write().await; // Access the SplitSink
+        let message_text = Message::Text(Utf8Bytes::from(message.to_json().to_string()));
+        sender.send(message_text).await.unwrap(); // Send the message via the SplitSink
     }
     pub async fn get_community(&self) -> Option<Arc<Community>> {
         self.community.read().await.clone()
@@ -398,8 +399,8 @@ impl CommunityConnection {
         self.send_message(&error).await;
     }
     pub async fn close(&self) {
-        let mut session = self.sender.write().await;
-        let _ = session.close(None).await;
+        let mut sender = self.sender.write().await;
+        let _ = sender.close().await;
     }
     pub async fn handle_close(self: Arc<Self>) {
         if self.is_identified().await {

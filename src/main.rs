@@ -16,6 +16,7 @@ mod server;
 mod users;
 mod util;
 
+use crate::communities::community::Community;
 use crate::communities::community_manager;
 use crate::communities::interactables::registry;
 use crate::data::communication::{CommunicationType, CommunicationValue, DataTypes};
@@ -25,7 +26,7 @@ use crate::gui::{log_panel, ratatui_interface};
 use crate::langu::language_creator;
 use crate::langu::language_manager::format;
 use crate::omikron::omikron_connection::OmikronConnection;
-use crate::server::socket::start;
+use crate::server::server::start;
 use crate::users::user_manager;
 use crate::util::config_util::CONFIG;
 
