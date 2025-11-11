@@ -1,6 +1,6 @@
 use std::ffi::OsStr;
 use std::fs::{self, File};
-use std::io::Read;
+use std::io::{self, BufReader, Read};
 use std::path::{Path, PathBuf};
 use sysinfo::System;
 use uuid::Uuid;
@@ -42,6 +42,36 @@ pub fn delete_user_directory(user_id: Uuid) {
     let _ = delete_dir_recursive(&user_dir);
 }
 
+pub fn load_file_buf(path: &str, name: &str) -> io::Result<BufReader<File>> {
+    let dir = Path::new(&get_directory()).join(path);
+    let file_path = dir.join(name);
+
+    // Ensure the directory exists, create if necessary
+    if !dir.exists() {
+        if let Err(e) = fs::create_dir_all(&dir) {
+            println!("[IMPORTANT] Couldn't create directories: {}", e);
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "Directory creation failed",
+            ));
+        }
+    }
+
+    // Create the file if it doesn't exist
+    if !file_path.exists() {
+        if let Err(e) = File::create(&file_path) {
+            println!("[IMPORTANT] Couldn't create file: {}", e);
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "File creation failed",
+            ));
+        }
+    }
+
+    // Open the file and return a BufReader for efficient reading
+    let file = File::open(&file_path)?;
+    Ok(BufReader::new(file))
+}
 pub fn load_file(path: &str, name: &str) -> String {
     let dir = Path::new(&get_directory()).join(path);
     let file_path = dir.join(name);

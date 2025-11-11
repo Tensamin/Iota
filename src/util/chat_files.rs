@@ -1,4 +1,4 @@
-use crate::util::file_util::{get_children, load_file, save_file};
+use crate::util::file_util::{get_children, get_directory, load_file, save_file};
 use json::{self, JsonValue, array, object};
 use std::fs::{self};
 use std::path::Path;
@@ -31,7 +31,12 @@ pub fn add_message(
     external_user: Uuid,
     message: &str,
 ) {
-    let user_dir = format!("users/{}/chats/{}", storage_owner, external_user);
+    let user_dir = format!(
+        "{}/users/{}/chats/{}",
+        get_directory(),
+        storage_owner,
+        external_user
+    );
 
     if let Err(e) = fs::create_dir_all(&user_dir) {
         log_message(format!("Failed to create chat directory: {}", e));
@@ -56,7 +61,6 @@ pub fn add_message(
                 log_message(format!("Failed to parse existing JSON file: {}", file_name));
             }
         } else {
-            // New file, use empty array
             break;
         }
 

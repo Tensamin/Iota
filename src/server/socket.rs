@@ -1,6 +1,6 @@
 use crate::communities::{community_connection::CommunityConnection, community_manager};
+use crate::gui::log_panel::log_message;
 
-use async_tungstenite::accept_hdr_async;
 use futures::StreamExt;
 use futures::stream::SplitSink;
 use futures::stream::SplitStream;
@@ -40,11 +40,13 @@ pub fn handle(
                                     .handle_message(text.to_string())
                                     .await;
                             } else if msg.is_close() {
+                                log_message(format!("Closing: {}", msg));
                                 community_conn.handle_close().await;
                                 return;
                             }
                         }
-                        Some(Err(_)) => {
+                        Some(Err(e)) => {
+                            log_message(format!("Closing ERR: {}", e));
                             community_conn.handle_close().await;
                             return;
                         }
@@ -57,31 +59,4 @@ pub fn handle(
             }
         }
     });
-}
-
-pub async fn start(port: u16) -> bool {
-    let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).await;
-    if let Err(_) = listener {
-        return false;
-    }
-    let listener = listener.unwrap();
-    tokio::spawn(async move {
-        while let Ok((stream, _)) = listener.accept().await {
-            let mut path: String = "/".to_string();
-            let callback = |req: &Request, response: Response| {
-                path = format!("{}", &req.uri().path());
-                Ok(response)
-            };
-            let ws_stream = match accept_hdr_async(stream.compat(), callback).await {
-                Ok(ws) => ws,
-                Err(_) => {
-                    return;
-                }
-            };
-
-            let (reader, writer) = ws_stream.split();
-            //handle(path, reader, writer);
-        }
-    });
-    true
 }

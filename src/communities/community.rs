@@ -54,6 +54,26 @@ impl Community {
             connections: Arc::new(RwLock::new(HashMap::new())),
         }
     }
+    pub async fn create(name: String) -> Self {
+        let mut buf = [0u8; 56];
+        let mut rng = OsRng;
+        rng.fill_bytes(&mut buf);
+        let private_key = Secret::from_bytes(&buf).unwrap();
+        let public_key = PublicKey::from(&private_key);
+        let c = Community {
+            name,
+            owner_id: Uuid::new_v4(),
+            members: Vec::new(),
+            permissions: HashMap::new(),
+            roles: HashMap::new(),
+            private_key,
+            public_key,
+            interactables: Arc::new(RwLock::new(Vec::new())),
+            connections: Arc::new(RwLock::new(HashMap::new())),
+        };
+        c.save().await;
+        c
+    }
 
     pub fn add_member(&mut self, member_id: Uuid) {
         self.members.push(member_id);
