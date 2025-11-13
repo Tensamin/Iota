@@ -16,7 +16,6 @@ mod server;
 mod users;
 mod util;
 
-use crate::communities::community::Community;
 use crate::communities::community_manager;
 use crate::communities::interactables::registry;
 use crate::data::communication::{CommunicationType, CommunicationValue, DataTypes};

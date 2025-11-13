@@ -15,10 +15,8 @@ use json::JsonValue;
 use rand::{Rng, distributions::Alphanumeric};
 use sha2::Sha256;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 use tokio::sync::RwLock;
 use tokio_tungstenite::WebSocketStream;
-use tokio_util::compat::Compat;
 use tungstenite::Message;
 use tungstenite::Utf8Bytes;
 use uuid::Uuid;
@@ -68,8 +66,10 @@ impl CommunityConnection {
     }
 
     pub async fn handle_message(self: Arc<Self>, message: String) {
-        let cv =
-            CommunicationValue::from_json(&message).with_sender(self.get_user_id().await.unwrap());
+        let mut cv = CommunicationValue::from_json(&message);
+        if let Some(user_id) = self.get_user_id().await {
+            cv = cv.with_sender(user_id);
+        }
 
         if cv.is_type(CommunicationType::identification) && !self.is_identified().await {
             self.handle_identification(cv).await;
@@ -101,26 +101,6 @@ impl CommunityConnection {
         }
     }
     async fn handle_function(&self, cv: CommunicationValue) {
-        /*
-         * {
-         * "type": "function",
-         * "id": "<uuid>",
-         * "log": {
-         *   "log_level": 0,
-         *   "message": "running function"
-         * },
-         * "data": {
-         *   "codec": "<channel_codec>", // optional
-         *   "name": "<channel_name>",
-         *   "path": "<overlord_category_name>/<overlord_category_name>...",
-         *   "function": "<function_to_execute>",
-         *   "payload": {
-         *     "<ARG_1>": "<VAL_1>",
-         *     ...
-         *   }
-         * }
-         * }
-         */
         let name = cv.get_data(DataTypes::name).unwrap().as_str().unwrap();
         let path = cv.get_data(DataTypes::path).unwrap().as_str().unwrap();
         let function = cv.get_data(DataTypes::function).unwrap().as_str().unwrap();

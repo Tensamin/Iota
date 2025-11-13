@@ -7,12 +7,7 @@ use futures::stream::SplitStream;
 use hyper::upgrade::Upgraded;
 use hyper_util::rt::TokioIo;
 use std::sync::Arc;
-use tokio::net::TcpListener;
-use tokio_util::compat::{Compat, TokioAsyncReadCompatExt};
-use tungstenite::{
-    Message, Utf8Bytes,
-    handshake::server::{Request, Response},
-};
+use tungstenite::Message;
 
 pub fn handle(
     path: String,
@@ -22,7 +17,9 @@ pub fn handle(
     tokio::spawn(async move {
         if path.starts_with("/ws/community/") {
             let community_id = path.split("/").nth(3).unwrap();
+            log_message(format!("Community: {}", community_id));
             if let Some(community) = community_manager::get_community(community_id).await {
+                log_message("Connected");
                 let community_conn: Arc<CommunityConnection> =
                     Arc::from(CommunityConnection::new(writer, reader, community));
                 loop {
@@ -51,6 +48,7 @@ pub fn handle(
                             return;
                         }
                         None => {
+                            log_message("Closed Session me!");
                             community_conn.handle_close().await;
                             return;
                         }

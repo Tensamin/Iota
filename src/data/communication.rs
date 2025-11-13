@@ -6,6 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
 #[derive(Eq, Hash, PartialEq, Clone, Debug)]
+#[allow(non_camel_case_types, dead_code)]
 pub enum DataTypes {
     error_type,
     accepted_ids,
@@ -152,11 +153,15 @@ impl DataTypes {
 }
 
 #[derive(PartialEq, Clone, Debug)]
+#[allow(non_camel_case_types, dead_code)]
 pub enum CommunicationType {
     error,
     error_invalid_user_id,
     error_not_found,
+    error_no_iota,
     error_invalid_challenge,
+    error_invalid_secret,
+    error_invalid_private_key,
     success,
     message,
     message_send,
@@ -264,6 +269,7 @@ pub struct CommunicationValue {
     pub data: HashMap<DataTypes, JsonValue>,
 }
 
+#[allow(dead_code)]
 impl CommunicationValue {
     pub fn new(comm_type: CommunicationType) -> Self {
         Self {

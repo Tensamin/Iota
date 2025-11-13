@@ -1,4 +1,5 @@
-use base64::encode;
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD;
 use futures::{StreamExt, TryFutureExt};
 use http_body_util::Full;
 use hyper::body::Bytes;
@@ -206,7 +207,7 @@ fn calculate_accept_key(key: &str) -> String {
     sha1.update(key.as_bytes());
     sha1.update(websocket_guid.as_bytes());
     let result = sha1.finalize();
-    encode(result) // Base64 encode the result
+    STANDARD.encode(result) // Base64 encode the result
 }
 fn load_tls_config() -> Result<Arc<ServerConfig>, Box<dyn Error>> {
     // Load certificate file

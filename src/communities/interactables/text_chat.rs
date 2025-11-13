@@ -7,13 +7,11 @@ use crate::{
     gui::log_panel::log_message,
     util::file_util::{get_children, load_file, save_file},
 };
-use aes_gcm::aead::Payload;
 use async_trait::async_trait;
-use axum::Json;
 use json::{JsonValue, array, object};
+use std::fs;
 use std::sync::Arc;
 use std::{any::Any, collections::HashMap};
-use std::{fs, pin::Pin};
 use uuid::Uuid;
 pub struct TextChat {
     name: String,
