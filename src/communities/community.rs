@@ -1,5 +1,6 @@
 use crate::communities::interactables::category::Category;
 use crate::communities::interactables::registry;
+use crate::communities::perms::permission::Permission;
 use crate::communities::{
     community_connection::CommunityConnection, interactables::interactable::Interactable,
 };
@@ -27,8 +28,8 @@ pub struct Community {
     name: String,
     owner_id: Uuid,
     members: Vec<Uuid>,
-    permissions: HashMap<Uuid, Vec<String>>,
-    roles: HashMap<String, Vec<String>>,
+    permissions: HashMap<Uuid, Vec<Permission>>,
+    roles: HashMap<String, Vec<Permission>>,
     private_key: Secret,
     public_key: PublicKey,
     pub interactables: Arc<RwLock<Vec<Arc<Box<dyn Interactable>>>>>,
@@ -148,6 +149,13 @@ impl Community {
             .await
             .retain(|i| !Arc::ptr_eq(i, &interactable));
     }
+    pub async fn broadcast_message(&self, message: &CommunicationValue) {
+        for (_, conns) in self.connections.read().await.clone().iter() {
+            for user in conns.iter() {
+                user.send_message(message).await;
+            }
+        }
+    }
     pub async fn run_function(
         self: &mut Arc<Self>,
         user_id: Uuid,
@@ -240,7 +248,7 @@ pub async fn load(name: &String) -> Option<Arc<Community>> {
     let user_data = file_util::load_file(&format!("communities/{}/", name), "users.json");
     let user_json: JsonValue = json::parse(&user_data).unwrap();
     let mut users = Vec::new();
-    let mut permissions: HashMap<Uuid, Vec<String>> = HashMap::new();
+    let mut permissions: HashMap<Uuid, Vec<Permission>> = HashMap::new();
 
     for user in user_json.entries() {
         let (str, json): (&str, &JsonValue) = user;
@@ -258,7 +266,7 @@ pub async fn load(name: &String) -> Option<Arc<Community>> {
     }
 
     let role_data = file_util::load_file(&format!("communities/{}/", name), "roles.json");
-    let roles: HashMap<String, Vec<String>> = HashMap::new();
+    let roles: HashMap<String, Vec<Permission>> = HashMap::new();
     if let Ok(_) = json::parse(&role_data) {
         // Fill roles
     } else {

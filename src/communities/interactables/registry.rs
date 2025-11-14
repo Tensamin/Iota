@@ -9,6 +9,7 @@ use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use uuid::Uuid;
 
 pub static INTERACTABLE_REGISTRY: Lazy<Arc<Mutex<HashMap<String, InteractableFactory>>>> =
     Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
@@ -45,6 +46,7 @@ pub async fn get_interactable(name: &str) -> Box<dyn Interactable> {
 pub async fn save(interactable: &Arc<Box<dyn Interactable>>) {
     let mut json_object: JsonValue = interactable.to_json().clone();
     json_object["codec"] = JsonValue::String(interactable.get_codec());
+    json_object["id"] = JsonValue::String(interactable.get_id().to_string());
     file_util::save_file(
         &format!(
             "communities/{}/interactables/{}",
@@ -66,7 +68,8 @@ pub async fn load(
     );
     let json_object: JsonValue = json::parse(&s).unwrap();
     let codec: String = json_object["codec"].as_str().unwrap().to_string();
+    let id: String = json_object["id"].as_str().unwrap().to_string();
     let mut interactable = get_interactable(&codec).await;
-    interactable.load(c, path, name, &json_object);
+    interactable.load(c, Uuid::parse_str(&id).unwrap(), path, name, &json_object);
     interactable
 }

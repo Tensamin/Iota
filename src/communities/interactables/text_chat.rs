@@ -14,6 +14,7 @@ use std::sync::Arc;
 use std::{any::Any, collections::HashMap};
 use uuid::Uuid;
 pub struct TextChat {
+    id: Uuid,
     name: String,
     path: String,
     community: Arc<Community>,
@@ -21,6 +22,7 @@ pub struct TextChat {
 impl TextChat {
     pub fn new() -> TextChat {
         TextChat {
+            id: Uuid::new_v4(),
             name: String::new(),
             path: String::new(),
             community: Arc::new(Community::new()),
@@ -152,6 +154,9 @@ impl TextChat {
 }
 #[async_trait]
 impl Interactable for TextChat {
+    fn get_id(&self) -> &Uuid {
+        &self.id
+    }
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -242,8 +247,16 @@ impl Interactable for TextChat {
     fn to_json(&self) -> JsonValue {
         JsonValue::new_object()
     }
-    fn load(&mut self, community: Arc<Community>, path: String, name: String, _: &JsonValue) {
+    fn load(
+        &mut self,
+        community: Arc<Community>,
+        id: Uuid,
+        path: String,
+        name: String,
+        _json: &JsonValue,
+    ) {
         self.community = community;
+        self.id = id;
         self.name = name;
         self.path = path;
     }

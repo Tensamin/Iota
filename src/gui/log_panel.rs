@@ -138,7 +138,7 @@ pub fn render() {
             .draw(|f| {
                 let sys = System::new_all();
 
-                let size = f.size();
+                let size = f.area();
                 let chunks = Layout::default()
                     .direction(Direction::Horizontal)
                     .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])

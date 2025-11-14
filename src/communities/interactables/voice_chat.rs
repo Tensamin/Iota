@@ -37,6 +37,7 @@ pub struct CallUser {
 }
 
 pub struct VoiceChat {
+    id: Uuid,
     name: String,
     path: String,
     community: Arc<Community>,
@@ -45,6 +46,7 @@ pub struct VoiceChat {
 impl VoiceChat {
     pub fn new() -> VoiceChat {
         VoiceChat {
+            id: Uuid::new_v4(),
             name: String::new(),
             path: String::new(),
             community: Arc::new(Community::new()),
@@ -71,6 +73,9 @@ impl VoiceChat {
 }
 #[async_trait]
 impl Interactable for VoiceChat {
+    fn get_id(&self) -> &Uuid {
+        &self.id
+    }
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -102,25 +107,6 @@ impl Interactable for VoiceChat {
         String::new() + &self.path + "/" + &self.name
     }
     fn get_data(&self) -> JsonValue {
-        /*
-        * "data": {
-                      "active_users": {
-                        "user_id": {
-                          "state": "<call_status>",
-                          "streaming": boolean
-                        },
-                        "user_id": {
-                          "state": "<call_status>",
-                          "streaming": boolean
-                         },
-                         "user_id": {
-                          "state": "<call_status>",
-                          "streaming": boolean
-                         }
-                      }
-                    }
-                  },
-        */
         let mut data = JsonValue::new_object();
         let mut active_users = JsonValue::new_object();
         for user in self.users.read().unwrap().iter() {
@@ -188,8 +174,16 @@ impl Interactable for VoiceChat {
         let v = JsonValue::new_object();
         v
     }
-    fn load(&mut self, community: Arc<Community>, path: String, name: String, _json: &JsonValue) {
+    fn load(
+        &mut self,
+        community: Arc<Community>,
+        id: Uuid,
+        path: String,
+        name: String,
+        _json: &JsonValue,
+    ) {
         self.community = community;
+        self.id = id;
         self.name = name;
         self.path = path;
     }

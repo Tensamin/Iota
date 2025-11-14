@@ -3,6 +3,7 @@ use async_trait::async_trait;
 use json::JsonValue;
 use std::any::Any;
 use std::sync::Arc;
+use uuid::Uuid;
 
 pub type InteractableFactory = fn() -> Box<dyn Interactable>;
 
@@ -20,6 +21,14 @@ pub trait Interactable: Send + Sync + Any {
     fn set_community(&mut self, community: Arc<Community>);
     async fn run_function(&self, cv: CommunicationValue) -> CommunicationValue;
     fn get_data(&self) -> JsonValue;
+    fn get_id(&self) -> &Uuid;
     fn to_json(&self) -> JsonValue;
-    fn load(&mut self, community: Arc<Community>, path: String, name: String, json: &JsonValue);
+    fn load(
+        &mut self,
+        community: Arc<Community>,
+        id: Uuid,
+        path: String,
+        name: String,
+        json: &JsonValue,
+    );
 }

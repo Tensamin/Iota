@@ -6,8 +6,10 @@ use async_trait::async_trait;
 use json::JsonValue;
 use std::any::Any;
 use std::sync::Arc;
+use uuid::Uuid;
 
 pub struct Category {
+    id: Uuid,
     name: String,
     path: String,
     community: Arc<Community>,
@@ -16,6 +18,7 @@ pub struct Category {
 impl Category {
     pub fn new() -> Category {
         Category {
+            id: Uuid::new_v4(),
             name: String::new(),
             path: String::new(),
             community: Arc::new(Community::new()),
@@ -50,6 +53,9 @@ impl Category {
 
 #[async_trait]
 impl Interactable for Category {
+    fn get_id(&self) -> &Uuid {
+        &self.id
+    }
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -90,7 +96,7 @@ impl Interactable for Category {
         }
         v
     }
-    async fn run_function(&self, cv: CommunicationValue) -> CommunicationValue {
+    async fn run_function(&self, _cv: CommunicationValue) -> CommunicationValue {
         CommunicationValue::new(CommunicationType::error)
     }
     fn to_json(&self) -> JsonValue {
@@ -101,8 +107,16 @@ impl Interactable for Category {
         }
         v
     }
-    fn load(&mut self, community: Arc<Community>, path: String, name: String, _json: &JsonValue) {
+    fn load(
+        &mut self,
+        community: Arc<Community>,
+        id: Uuid,
+        path: String,
+        name: String,
+        _json: &JsonValue,
+    ) {
         self.community = community;
+        self.id = id;
         self.name = name;
         self.path = path;
     }

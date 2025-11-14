@@ -8,3 +8,6 @@ pub mod interactables {
 }
 pub mod community;
 pub mod community_connection;
+pub mod perms {
+    pub mod permission;
+}

@@ -1,10 +1,9 @@
 use crate::auth::auth_connector;
 use crate::users::user_profile::UserProfile;
-use crate::users::user_profile_full::UserProfileFull;
 use crate::util::config_util::CONFIG;
 use crate::util::file_util::{load_file, save_file};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use hex;
+use hex::{self};
 use json::JsonValue;
 use once_cell::sync::Lazy;
 use rand::Rng;
@@ -19,7 +18,7 @@ use x448::{PublicKey, Secret};
 static USERS: Lazy<Mutex<Vec<UserProfile>>> = Lazy::new(|| Mutex::new(Vec::new()));
 static UNIQUE: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 
-pub async fn create_user(username: &str) -> Option<UserProfileFull> {
+pub async fn create_user(username: &str) -> (Option<UserProfile>, Option<String>) {
     let user_id = auth_connector::get_register().await.unwrap();
     let mut buf = [0u8; 56];
     let mut rng = OsRng;
@@ -45,11 +44,6 @@ pub async fn create_user(username: &str) -> Option<UserProfileFull> {
         reset_token,
     );
 
-    let up_full = UserProfileFull {
-        user_profile: up.clone(),
-        private_key: STANDARD.encode(&private_key.as_bytes()),
-    };
-
     auth_connector::complete_register(&up, &CONFIG.lock().unwrap().get_iota_id().to_string()).await;
     save_file(
         "",
@@ -57,9 +51,9 @@ pub async fn create_user(username: &str) -> Option<UserProfileFull> {
         &format!("{}::{}", user_id, STANDARD.encode(&private_key.as_bytes())),
     );
 
-    USERS.lock().unwrap().push(up);
+    USERS.lock().unwrap().push(up.clone());
     save_users().ok();
-    Some(up_full)
+    (Some(up), Some(STANDARD.encode(&private_key.as_bytes())))
 }
 
 pub fn get_user(user_id: Uuid) -> Option<UserProfile> {

@@ -10,9 +10,9 @@ pub fn check_eula() -> bool {
         return false;
     }
 
-    if (file.contains("eula=false")) {
+    if file.contains("eula=false") {
         false
-    } else if (file.contains("eula=true")) {
+    } else if file.contains("eula=true") {
         true
     } else {
         false
