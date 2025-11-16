@@ -49,7 +49,6 @@ pub fn load_file_buf(path: &str, name: &str) -> io::Result<BufReader<File>> {
     // Ensure the directory exists, create if necessary
     if !dir.exists() {
         if let Err(e) = fs::create_dir_all(&dir) {
-            println!("[IMPORTANT] Couldn't create directories: {}", e);
             return Err(io::Error::new(
                 io::ErrorKind::NotFound,
                 "Directory creation failed",
@@ -59,13 +58,10 @@ pub fn load_file_buf(path: &str, name: &str) -> io::Result<BufReader<File>> {
 
     // Create the file if it doesn't exist
     if !file_path.exists() {
-        if let Err(e) = File::create(&file_path) {
-            println!("[IMPORTANT] Couldn't create file: {}", e);
-            return Err(io::Error::new(
-                io::ErrorKind::NotFound,
-                "File creation failed",
-            ));
-        }
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "File creation failed",
+        ));
     }
 
     // Open the file and return a BufReader for efficient reading

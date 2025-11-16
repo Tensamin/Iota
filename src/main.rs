@@ -24,6 +24,7 @@ use crate::gui::log_panel::{log_message, log_message_trans};
 use crate::gui::{log_panel, ratatui_interface};
 use crate::langu::language_creator;
 use crate::langu::language_manager::format;
+use crate::omikron::omikron_connection::OMIKRON_CONNECTION;
 use crate::omikron::omikron_connection::OmikronConnection;
 use crate::server::server::start;
 use crate::users::user_manager;
@@ -31,6 +32,7 @@ use crate::util::config_util::CONFIG;
 
 pub static APP_STATE: LazyLock<Arc<Mutex<AppState>>> =
     LazyLock::new(|| Arc::new(Mutex::new(AppState::new())));
+
 #[tokio::main(flavor = "multi_thread", worker_threads = 8)]
 #[allow(unused_must_use, dead_code)]
 async fn main() {
@@ -115,7 +117,7 @@ async fn main() {
     }
 
     loop {
-        let omikron: OmikronConnection = OmikronConnection::new();
+        let omikron: Arc<OmikronConnection> = Arc::new(OmikronConnection::new());
         omikron.connect().await;
         omikron
             .send_message(
@@ -131,6 +133,8 @@ async fn main() {
                     .to_string(),
             )
             .await;
+        let mut omikron_connection = OMIKRON_CONNECTION.write().await;
+        *omikron_connection = Some(omikron.clone());
         log_message_trans("setup_completed");
         loop {
             if !omikron.is_connected().await {

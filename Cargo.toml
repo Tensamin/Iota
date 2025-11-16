@@ -35,7 +35,7 @@ serde = { version = "1.0.219", features = ["derive"] }
 sha2 = "*"
 sys-info = "*"
 sysinfo = "0.30"
-tokio = { version = "*", features = ["full"] }
+tokio = { version = "1.48.0", features = ["full"] }
 tokio-util = { version = "*", features = ["full"] }
 tokio-tungstenite = { version = "*", features = ["native-tls"] }
 tower = "*"
@@ -49,3 +49,4 @@ tokio-rustls = "0.26.4"
 rustls-pemfile = "2.2.0"
 async-trait = "0.1.89"
 sha1 = "0.10.6"
+async-tungstenite = "0.32.0"

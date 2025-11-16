@@ -9,16 +9,18 @@ use hyper::{
 };
 use hyper_util::rt::tokio::TokioIo;
 use hyper_util::service::TowerToHyperService;
+// FIX: Add necessary rustls imports for builder in minimal-feature environment
 use rustls::ServerConfig;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use sha1::{Digest, Sha1};
 use std::error::Error;
 use std::io::ErrorKind;
 use std::io::{self, BufReader};
+use std::net::{IpAddr, SocketAddr};
 use std::result::Result::Ok;
 use std::sync::Arc;
 use std::{future::Future, pin::Pin, time::Duration};
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
 use tokio_tungstenite::WebSocketStream;
 use tower::Service;
 
@@ -26,8 +28,11 @@ use crate::gui::log_panel::log_message;
 use crate::server::socket::handle;
 use crate::util::file_util::load_file_buf;
 use tokio_rustls::TlsAcceptor;
+
 #[derive(Clone)]
-struct HttpService;
+struct HttpService {
+    peer_addr: SocketAddr,
+}
 
 impl Service<HttpRequest<Incoming>> for HttpService {
     type Response = HttpResponse<Full<Bytes>>;
@@ -45,6 +50,9 @@ impl Service<HttpRequest<Incoming>> for HttpService {
         let path = req.uri().path().to_string();
         let headers = req.headers().clone();
         let upgrades = upgrade::on(req);
+
+        let peer_ip = self.peer_addr.ip();
+        let is_local = is_local_network(peer_ip);
 
         let fut = async move {
             if path.starts_with("/ws")
@@ -104,17 +112,14 @@ impl Service<HttpRequest<Incoming>> for HttpService {
                 let (status, body_text) = match path.as_str() {
                     "/" => (
                         StatusCode::OK,
-                        "Server: Try connecting to WebSocket at ws://<host>:<port>/ws or check /status.",
+                        "Server: Try connecting to WebSocket at ws[s]://<host>:<port>/ws or check /status.",
                     ),
-                    "/status" => (StatusCode::OK, "HTTP Server Status: Online"),
+                    "/status" => (StatusCode::OK, "Server Status: Online"),
+                    "/index" => (StatusCode::OK, include_str!("../../static/web/index.html")),
                     _ => (StatusCode::NOT_FOUND, "404 Not Found"),
                 };
                 let body = Full::new(Bytes::from(body_text.to_string()));
-                let response = HttpResponse::builder()
-                    .status(status)
-                    .header(hyper::header::CONTENT_TYPE, "text/plain")
-                    .body(body)
-                    .unwrap();
+                let response = HttpResponse::builder().status(status).body(body).unwrap();
                 Ok(response)
             }
         };
@@ -128,15 +133,84 @@ impl Service<HttpRequest<Incoming>> for HttpService {
     }
 }
 
-pub async fn start(port: u16) -> bool {
-    let tls_config = match load_tls_config() {
-        Ok(config) => config,
-        Err(e) => {
-            log_message(format!("Failed to load TLS configuration: {}", e));
-            log_message("Server stopped. Ensure 'certs/cert.pem' and 'certs/key.pem' exist.");
-            return false;
+fn is_local_network(addr: IpAddr) -> bool {
+    // 1. Check for standard private ranges (RFC 1918) and loopback
+    if addr.is_loopback() {
+        return true;
+    }
+
+    // 2. Check for Link-Local Addresses (169.254.x.x)
+    if let IpAddr::V4(ipv4) = addr {
+        if ipv4.octets()[0] == 169 && ipv4.octets()[1] == 254 {
+            return true;
         }
-    };
+    }
+
+    // 3. Check for IPv6 Unique Local Addresses (fc00::/7)
+    if let IpAddr::V6(ipv6) = addr {
+        if (ipv6.segments()[0] & 0xfe00) == 0xfc00 {
+            return true;
+        }
+    }
+
+    false
+}
+
+/// Runs the standard, unencrypted HTTP/WS server loop.
+async fn run_http_server(port: u16) -> bool {
+    // Bind to the port
+    let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).await;
+    if let Err(e) = listener {
+        log_message(format!("Failed to bind to port {}: {:?}", port, e));
+        return false;
+    }
+    let listener = listener.unwrap();
+    log_message(format!(
+        "Standard Server listening for HTTP and WS on 0.0.0.0:{}",
+        port
+    ));
+
+    tokio::spawn(async move {
+        loop {
+            match listener.accept().await {
+                std::result::Result::Ok((stream, addr)) => {
+                    let service = HttpService { peer_addr: addr };
+                    let io = TokioIo::new(stream);
+
+                    tokio::spawn(async move {
+                        if let Err(err) = http1::Builder::new()
+                            .preserve_header_case(true)
+                            .title_case_headers(true)
+                            .serve_connection(io, TowerToHyperService::new(service))
+                            .with_upgrades()
+                            .await
+                        {
+                            if let Some(io_err) =
+                                err.source().and_then(|e| e.downcast_ref::<io::Error>())
+                            {
+                                if io_err.kind() != io::ErrorKind::ConnectionReset
+                                    && io_err.kind() != io::ErrorKind::BrokenPipe
+                                {
+                                    log_message(format!("Error serving connection: {:?}", err));
+                                }
+                            } else {
+                                log_message(format!("Error serving connection: {:?}", err));
+                            }
+                        }
+                    });
+                }
+                Err(e) => {
+                    log_message(format!("Error accepting connection: {:?}", e));
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                }
+            }
+        }
+    });
+    true
+}
+
+/// Runs the encrypted HTTPS/WSS server loop using the provided TLS config.
+async fn run_tls_server(port: u16, tls_config: Arc<ServerConfig>) -> bool {
     let acceptor = TlsAcceptor::from(tls_config);
 
     // Bind to the port
@@ -147,18 +221,19 @@ pub async fn start(port: u16) -> bool {
     }
     let listener = listener.unwrap();
     log_message(format!(
-        "Server listening for HTTP and WS on 0.0.0.0:{}",
+        "Encrypted Server listening for HTTPS and WSS on 0.0.0.0:{}",
         port
     ));
 
     tokio::spawn(async move {
         loop {
             match listener.accept().await {
-                std::result::Result::Ok((stream, _addr)) => {
-                    let service = HttpService;
+                std::result::Result::Ok((stream, addr)) => {
+                    let service = HttpService { peer_addr: addr };
                     let acceptor = acceptor.clone();
 
                     tokio::spawn(async move {
+                        // Perform TLS handshake
                         let tls_stream = match acceptor.accept(stream).await {
                             Ok(s) => s,
                             Err(e) => {
@@ -201,6 +276,26 @@ pub async fn start(port: u16) -> bool {
     });
     true
 }
+
+pub async fn start(port: u16) -> bool {
+    let tls_result = load_tls_config();
+
+    match tls_result {
+        Ok(Some(tls_config)) => {
+            // Certificates found and config loaded successfully, run the TLS server
+            run_tls_server(port, tls_config).await
+        }
+        Ok(None) => {
+            // Certificates not found, run the standard HTTP server
+            run_http_server(port).await
+        }
+        Err(e) => {
+            log_message(format!("Fatal error during TLS config load: {}", e));
+            // Error, server cannot start
+            false
+        }
+    }
+}
 fn calculate_accept_key(key: &str) -> String {
     let websocket_guid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
     let mut sha1 = Sha1::new();
@@ -209,30 +304,54 @@ fn calculate_accept_key(key: &str) -> String {
     let result = sha1.finalize();
     STANDARD.encode(result) // Base64 encode the result
 }
-fn load_tls_config() -> Result<Arc<ServerConfig>, Box<dyn Error>> {
-    // Load certificate file
-    let mut cert_file = BufReader::new(load_file_buf("certs", "cert.pem")?);
-    let cert_ders = rustls_pemfile::certs(&mut cert_file)
+
+/// Loads TLS config. Returns Ok(None) if cert files are not found, and an error if parsing fails.
+fn load_tls_config() -> Result<Option<Arc<ServerConfig>>, Box<dyn Error>> {
+    let cert_file_res = load_file_buf("certs", "cert.pem");
+    let key_file_res = load_file_buf("certs", "cert.key");
+
+    // Check if certificate files are present. If not, return None.
+    let cert_file_buf = match cert_file_res {
+        Ok(b) => b,
+        Err(e) if e.kind() == ErrorKind::NotFound => {
+            log_message("TLS certificate 'certs/cert.pem' not found.");
+            return Ok(None);
+        }
+        Err(e) => return Err(e.into()), // Other IO error
+    };
+
+    let key_file_buf = match key_file_res {
+        Ok(b) => b,
+        Err(e) if e.kind() == ErrorKind::NotFound => {
+            log_message("TLS key 'certs/cert.key' not found.");
+            return Ok(None);
+        }
+        Err(e) => return Err(e.into()), // Other IO error
+    };
+
+    // Continue with configuration if both files were found
+    let mut cert_reader = BufReader::new(cert_file_buf);
+    let cert_ders = rustls_pemfile::certs(&mut cert_reader)
         .collect::<Result<Vec<CertificateDer>, io::Error>>()?;
 
     // PKCS8
-    let mut key_file = BufReader::new(load_file_buf("certs", "cert.key")?);
-    let mut key_ders = rustls_pemfile::pkcs8_private_keys(&mut key_file)
+    let mut key_reader = BufReader::new(key_file_buf);
+    let mut key_ders = rustls_pemfile::pkcs8_private_keys(&mut key_reader)
         .map(|r| r.map(Into::into)) // Explicit conversion
         .collect::<Result<Vec<PrivateKeyDer>, io::Error>>()?;
 
     if key_ders.is_empty() {
         // RSA
-        key_file = BufReader::new(load_file_buf("certs", "cert.key")?);
-        key_ders = rustls_pemfile::rsa_private_keys(&mut key_file)
+        key_reader = BufReader::new(load_file_buf("certs", "cert.key")?); // Re-read key file
+        key_ders = rustls_pemfile::rsa_private_keys(&mut key_reader)
             .map(|r| r.map(Into::into))
             .collect::<Result<Vec<PrivateKeyDer>, io::Error>>()?;
     }
 
     if key_ders.is_empty() {
         // EC
-        key_file = BufReader::new(load_file_buf("certs", "cert.key")?);
-        key_ders = rustls_pemfile::ec_private_keys(&mut key_file)
+        key_reader = BufReader::new(load_file_buf("certs", "cert.key")?); // Re-read key file
+        key_ders = rustls_pemfile::ec_private_keys(&mut key_reader)
             .map(|r| r.map(Into::into))
             .collect::<Result<Vec<PrivateKeyDer>, io::Error>>()?;
     }
@@ -246,5 +365,5 @@ fn load_tls_config() -> Result<Arc<ServerConfig>, Box<dyn Error>> {
         .with_single_cert(cert_ders, key_ders.remove(0))
         .map_err(|e| io::Error::new(ErrorKind::Other, e.to_string()))?;
 
-    Ok(Arc::new(config))
+    Ok(Some(Arc::new(config)))
 }

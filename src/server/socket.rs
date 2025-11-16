@@ -1,5 +1,6 @@
 use crate::communities::{community_connection::CommunityConnection, community_manager};
 use crate::gui::log_panel::log_message;
+use crate::omikron::omikron_connection::OmikronConnection;
 
 use futures::StreamExt;
 use futures::stream::SplitSink;
@@ -15,7 +16,9 @@ pub fn handle(
     reader: SplitStream<tokio_tungstenite::WebSocketStream<TokioIo<Upgraded>>>,
 ) {
     tokio::spawn(async move {
-        if path.starts_with("/ws/community/") {
+        if path.starts_with("/ws/users/") {
+            OmikronConnection::client(writer, reader).await;
+        } else if path.starts_with("/ws/community/") {
             let community_id = path.split("/").nth(3).unwrap();
             log_message(format!("Community: {}", community_id));
             if let Some(community) = community_manager::get_community(community_id).await {
