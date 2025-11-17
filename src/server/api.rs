@@ -1,3 +1,4 @@
+use crate::gui::log_panel::log_message;
 use axum::http::HeaderValue;
 use http_body_util::Full;
 use hyper::body::Bytes;
@@ -18,54 +19,71 @@ pub async fn handle(
             .body(Full::new(Bytes::from("403 Forbidden".to_string())))
             .unwrap();
     }
-    let mut path_parts = path.split("/");
-    let (status, content, body_text) = match path_parts.nth(1).unwrap() {
-        "app_state" => (StatusCode::OK, "application/json", {
-            let json = APP_STATE.lock().unwrap().clone();
-            json.to_json().to_string()
-        }),
-        "users" => (StatusCode::OK, "application/json", {
-            if path_parts.nth(2).is_some() {
-                if path_parts.nth(2).unwrap() == "add" {
-                    "{}".to_string()
-                } else if path_parts.nth(2).unwrap() == "remove" {
-                    "{}".to_string()
-                } else if path_parts.nth(2).unwrap() == "get" {
+
+    // Collect path parts into a vector to avoid iterator consumption issues
+    let path_parts: Vec<&str> = path.split("/").collect();
+
+    // path_parts[0] is empty (before first /), path_parts[1] should be "api", path_parts[2] is the endpoint
+    let (status, content, body_text) = if path_parts.len() >= 3 {
+        match path_parts[2] {
+            "app_state" => (StatusCode::OK, "application/json", {
+                let json = APP_STATE.lock().unwrap().clone();
+                json.to_json().to_string()
+            }),
+            "users" => (StatusCode::OK, "application/json", {
+                // Check for sub-endpoints like /api/users/add, /api/users/get, etc.
+                if path_parts.len() >= 4 {
+                    match path_parts[3] {
+                        "add" => "{}".to_string(),
+                        "remove" => "{}".to_string(),
+                        "get" => {
+                            let users = user_manager::get_users();
+                            let mut json = JsonValue::new_array();
+                            for user in users {
+                                let _ = json.push(user.to_json());
+                            }
+                            json.to_string()
+                        }
+                        _ => "{}".to_string(),
+                    }
+                } else {
+                    // Default: return all users
                     let users = user_manager::get_users();
                     let mut json = JsonValue::new_array();
                     for user in users {
                         let _ = json.push(user.to_json());
                     }
                     json.to_string()
-                } else {
-                    "{}".to_string()
                 }
-            } else {
-                let users = user_manager::get_users();
+            }),
+            "communities" => (StatusCode::OK, "application/json", {
+                let communities = community_manager::get_communities().await;
                 let mut json = JsonValue::new_array();
-                for user in users {
-                    let _ = json.push(user.to_json());
+                for community in communities {
+                    let _ = json.push(community.to_json().await);
                 }
                 json.to_string()
-            }
-        }),
-        "communities" => (StatusCode::OK, "application/json", {
-            let communities = community_manager::get_communities().await;
-            let mut json = JsonValue::new_array();
-            for community in communities {
-                let _ = json.push(community.to_json().await);
-            }
-            json.to_string()
-        }),
-        "settings" => (StatusCode::OK, "application/json", {
-            CONFIG.lock().unwrap().config.to_string()
-        }),
+            }),
+            "settings" => (StatusCode::OK, "application/json", {
+                CONFIG.lock().unwrap().config.to_string()
+            }),
 
-        _ => (
+            _ => {
+                log_message(format!("Unknown API endpoint: {}", path));
+                (
+                    StatusCode::NOT_FOUND,
+                    "application/json",
+                    "404 Not Found".to_string(),
+                )
+            }
+        }
+    } else {
+        log_message(format!("Invalid API path: {}", path));
+        (
             StatusCode::NOT_FOUND,
             "application/json",
             "404 Not Found".to_string(),
-        ),
+        )
     };
     let body = Full::new(Bytes::from(body_text.to_string()));
     HttpResponse::builder()
