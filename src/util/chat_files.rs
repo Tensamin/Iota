@@ -84,7 +84,6 @@ pub fn add_message(
     }
 
     let file_name = format!("msgs_{}.json", chunk_index);
-    log_message(format!("Saving message to {}/{}", user_dir, file_name));
     save_file(&user_dir, &file_name, &message_chunk.dump());
 }
 pub fn change_message_state(

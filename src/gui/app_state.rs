@@ -1,5 +1,7 @@
 use std::collections::VecDeque;
 
+use json::{JsonValue, object};
+
 #[derive(Clone)]
 pub struct AppState {
     pub logs: VecDeque<String>,
@@ -66,5 +68,33 @@ impl AppState {
         if self.net_down.len() > MAX_POINTS {
             self.net_down.remove(0);
         }
+    }
+    pub fn to_json(&self) -> JsonValue {
+        let json = object! {
+            "cpu" => self.cpu
+            .iter()
+            .map(|(_, y)| *y)
+            .collect::<Vec<f64>>(),
+            "ram" => self.ram
+            .iter()
+            .map(|(_, y)| *y)
+            .collect::<Vec<f64>>(),
+            "ping" => self
+            .ping
+            .iter()
+            .map(|(_, y)| *y)
+            .collect::<Vec<f64>>(),
+            "net_up" => self
+            .net_up
+            .iter()
+            .map(|(_, y)| *y)
+            .collect::<Vec<f64>>(),
+            "net_down" => self
+            .net_down
+            .iter()
+            .map(|(_, y)| *y)
+            .collect::<Vec<f64>>(),
+        };
+        json
     }
 }

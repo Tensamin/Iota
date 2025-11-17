@@ -76,6 +76,23 @@ impl Community {
         c
     }
 
+    pub async fn to_json(&self) -> JsonValue {
+        let mut json = JsonValue::new_object();
+        json["name"] = self.name.clone().into();
+        json["owner_id"] = self.owner_id.to_string().into();
+        json["members"] = self
+            .members
+            .clone()
+            .iter()
+            .map(|f| f.to_string())
+            .collect::<Vec<String>>()
+            .into();
+        json["private_key"] = self.private_key.as_bytes().to_vec().into();
+        json["public_key"] = self.public_key.as_bytes().to_vec().into();
+        json["connections"] = self.connections.read().await.clone().len().into();
+        json
+    }
+
     pub fn add_member(&mut self, member_id: Uuid) {
         self.members.push(member_id);
     }

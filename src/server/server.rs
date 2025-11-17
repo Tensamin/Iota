@@ -1,3 +1,7 @@
+use crate::gui::log_panel::log_message;
+use crate::server::api;
+use crate::server::socket::handle;
+use crate::util::file_util::load_file_buf;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use futures::{StreamExt, TryFutureExt};
@@ -9,7 +13,6 @@ use hyper::{
 };
 use hyper_util::rt::tokio::TokioIo;
 use hyper_util::service::TowerToHyperService;
-// FIX: Add necessary rustls imports for builder in minimal-feature environment
 use rustls::ServerConfig;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use sha1::{Digest, Sha1};
@@ -20,14 +23,10 @@ use std::net::{IpAddr, SocketAddr};
 use std::result::Result::Ok;
 use std::sync::Arc;
 use std::{future::Future, pin::Pin, time::Duration};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::TcpListener;
+use tokio_rustls::TlsAcceptor;
 use tokio_tungstenite::WebSocketStream;
 use tower::Service;
-
-use crate::gui::log_panel::log_message;
-use crate::server::socket::handle;
-use crate::util::file_util::load_file_buf;
-use tokio_rustls::TlsAcceptor;
 
 #[derive(Clone)]
 struct HttpService {
@@ -101,7 +100,6 @@ impl Service<HttpRequest<Incoming>> for HttpService {
                     Ok(response)
                 } else {
                     log_message("No Sec-WebSocket-Key found in request headers");
-                    // Handle error: No Sec-WebSocket-Key
                     let response = HttpResponse::builder()
                         .status(StatusCode::BAD_REQUEST)
                         .body(Full::new(Bytes::from("Missing Sec-WebSocket-Key")))
@@ -109,18 +107,31 @@ impl Service<HttpRequest<Incoming>> for HttpService {
                     Ok(response)
                 }
             } else {
-                let (status, body_text) = match path.as_str() {
-                    "/" => (
-                        StatusCode::OK,
-                        "Server: Try connecting to WebSocket at ws[s]://<host>:<port>/ws or check /status.",
-                    ),
-                    "/status" => (StatusCode::OK, "Server Status: Online"),
-                    "/index" => (StatusCode::OK, include_str!("../../static/web/index.html")),
-                    _ => (StatusCode::NOT_FOUND, "404 Not Found"),
-                };
-                let body = Full::new(Bytes::from(body_text.to_string()));
-                let response = HttpResponse::builder().status(status).body(body).unwrap();
-                Ok(response)
+                if path.starts_with("/api") {
+                    Ok(api::handle(&path, &is_local, headers).await)
+                } else {
+                    let (status, content, body_text) = match path.as_str() {
+                        "/" => (
+                            StatusCode::OK,
+                            "text/plain",
+                            "Server: Try connecting to WebSocket at ws[s]://<host>:<port>/ws or check /status.",
+                        ),
+                        "/status" => (StatusCode::OK, "text/plain", "Server Status: Online"),
+                        "/index" => (
+                            StatusCode::OK,
+                            "text/html",
+                            include_str!("../../static/web/index.html"),
+                        ),
+                        _ => (StatusCode::NOT_FOUND, "text/plain", "404 Not Found"),
+                    };
+                    let body = Full::new(Bytes::from(body_text.to_string()));
+                    let response = HttpResponse::builder()
+                        .header("Content-Type", content)
+                        .status(status)
+                        .body(body)
+                        .unwrap();
+                    Ok(response)
+                }
             }
         };
 
