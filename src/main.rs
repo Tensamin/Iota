@@ -29,6 +29,8 @@ use crate::omikron::omikron_connection::OmikronConnection;
 use crate::server::server::start;
 use crate::users::user_manager;
 use crate::util::config_util::CONFIG;
+use crate::util::file_util::download_and_extract_zip;
+use crate::util::file_util::has_dir;
 
 pub static APP_STATE: LazyLock<Arc<Mutex<AppState>>> =
     LazyLock::new(|| Arc::new(Mutex::new(AppState::new())));
@@ -115,7 +117,13 @@ async fn main() {
             log_message(format("community_start_error", &[&port.to_string()]));
         }
     }
-
+    if !has_dir("web") {
+        /*download_and_extract_zip(
+            "weblink",
+            "web",
+        )
+        .await;*/
+    }
     loop {
         let omikron: Arc<OmikronConnection> = Arc::new(OmikronConnection::new());
         omikron.connect().await;

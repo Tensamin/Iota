@@ -1,12 +1,13 @@
 use crate::gui::log_panel::log_message;
 use crate::server::api;
 use crate::server::socket::handle;
-use crate::util::file_util::load_file_buf;
+use crate::util::file_util::{load_file, load_file_buf};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use futures::{StreamExt, TryFutureExt};
 use http_body_util::Full;
 use hyper::body::Bytes;
+use hyper::header::CONTENT_LENGTH;
 use hyper::{
     Request as HttpRequest, Response as HttpResponse, StatusCode, body::Incoming,
     server::conn::http1, upgrade,
@@ -110,20 +111,44 @@ impl Service<HttpRequest<Incoming>> for HttpService {
                 if path.starts_with("/api") {
                     Ok(api::handle(&path, &is_local, headers).await)
                 } else {
-                    let (status, content, body_text) = match path.as_str() {
-                        "/" => (
-                            StatusCode::OK,
-                            "text/plain",
-                            "Server: Try connecting to WebSocket at ws[s]://<host>:<port>/ws or check /status.",
-                        ),
-                        "/status" => (StatusCode::OK, "text/plain", "Server Status: Online"),
-                        "/index" => (
-                            StatusCode::OK,
-                            "text/html",
-                            include_str!("../../static/web/index.html"),
-                        ),
-                        _ => (StatusCode::NOT_FOUND, "text/plain", "404 Not Found"),
-                    };
+                    let mut path_parts: Vec<&str> = path.split("/").collect();
+                    let name = path_parts.remove(path_parts.len() - 1);
+
+                    let (status, content, body_text): (StatusCode, &str, String) =
+                        if name.is_empty() {
+                            let content = load_file("web", "index.html");
+                            if content.is_empty() {
+                                let content = load_file("web", "404.html");
+                                if content.is_empty() {
+                                    (
+                                        StatusCode::NOT_FOUND,
+                                        "text/html",
+                                        include_str!("../../static/web/404.html").to_string(),
+                                    )
+                                } else {
+                                    (StatusCode::OK, "text/html", content)
+                                }
+                            } else {
+                                (StatusCode::OK, "text/html", content)
+                            }
+                        } else {
+                            let content = load_file(&format!("web{}/", path_parts.join("/")), name);
+                            if content.is_empty() {
+                                let content = load_file("web", "404.html");
+                                if content.is_empty() {
+                                    (
+                                        StatusCode::NOT_FOUND,
+                                        "text/html",
+                                        include_str!("../../static/web/404.html").to_string(),
+                                    )
+                                } else {
+                                    (StatusCode::OK, "text/html", content)
+                                }
+                            } else {
+                                (StatusCode::OK, "text/html", content)
+                            }
+                        };
+
                     let body = Full::new(Bytes::from(body_text.to_string()));
                     let response = HttpResponse::builder()
                         .header("Content-Type", content)
@@ -145,19 +170,16 @@ impl Service<HttpRequest<Incoming>> for HttpService {
 }
 
 fn is_local_network(addr: IpAddr) -> bool {
-    // 1. Check for standard private ranges (RFC 1918) and loopback
     if addr.is_loopback() {
         return true;
     }
 
-    // 2. Check for Link-Local Addresses (169.254.x.x)
     if let IpAddr::V4(ipv4) = addr {
         if ipv4.octets()[0] == 169 && ipv4.octets()[1] == 254 {
             return true;
         }
     }
 
-    // 3. Check for IPv6 Unique Local Addresses (fc00::/7)
     if let IpAddr::V6(ipv6) = addr {
         if (ipv6.segments()[0] & 0xfe00) == 0xfc00 {
             return true;
@@ -167,9 +189,7 @@ fn is_local_network(addr: IpAddr) -> bool {
     false
 }
 
-/// Runs the standard, unencrypted HTTP/WS server loop.
 async fn run_http_server(port: u16) -> bool {
-    // Bind to the port
     let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).await;
     if let Err(e) = listener {
         log_message(format!("Failed to bind to port {}: {:?}", port, e));
@@ -224,7 +244,6 @@ async fn run_http_server(port: u16) -> bool {
 async fn run_tls_server(port: u16, tls_config: Arc<ServerConfig>) -> bool {
     let acceptor = TlsAcceptor::from(tls_config);
 
-    // Bind to the port
     let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).await;
     if let Err(e) = listener {
         log_message(format!("Failed to bind to port {}: {:?}", port, e));

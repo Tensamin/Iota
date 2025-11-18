@@ -20,10 +20,8 @@ pub async fn handle(
             .unwrap();
     }
 
-    // Collect path parts into a vector to avoid iterator consumption issues
     let path_parts: Vec<&str> = path.split("/").collect();
 
-    // path_parts[0] is empty (before first /), path_parts[1] should be "api", path_parts[2] is the endpoint
     let (status, content, body_text) = if path_parts.len() >= 3 {
         match path_parts[2] {
             "app_state" => (StatusCode::OK, "application/json", {
@@ -31,7 +29,6 @@ pub async fn handle(
                 json.to_json().to_string()
             }),
             "users" => (StatusCode::OK, "application/json", {
-                // Check for sub-endpoints like /api/users/add, /api/users/get, etc.
                 if path_parts.len() >= 4 {
                     match path_parts[3] {
                         "add" => "{}".to_string(),
@@ -47,7 +44,6 @@ pub async fn handle(
                         _ => "{}".to_string(),
                     }
                 } else {
-                    // Default: return all users
                     let users = user_manager::get_users();
                     let mut json = JsonValue::new_array();
                     for user in users {

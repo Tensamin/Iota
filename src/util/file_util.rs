@@ -1,10 +1,13 @@
 use std::ffi::OsStr;
 use std::fs::{self, File};
-use std::io::{self, BufReader, Read};
+use std::io::{self, BufReader, Cursor, Read};
 use std::path::{Path, PathBuf};
 use sysinfo::System;
 use uuid::Uuid;
 use walkdir::WalkDir;
+use zip::ZipArchive;
+
+use crate::gui::log_panel::log_message;
 
 pub fn delete_file(path: &str, name: &str) -> bool {
     let dir = Path::new(&get_directory()).join(path);
@@ -25,11 +28,11 @@ fn delete_dir_recursive(directory: &Path) -> bool {
         return false;
     }
     if let Err(e) = fs::remove_dir_all(directory) {
-        println!(
+        log_message(format!(
             "[IMPORTANT] Couldn't delete directory {}: {}",
             directory.display(),
             e
-        );
+        ));
         return false;
     }
     true
@@ -48,7 +51,7 @@ pub fn load_file_buf(path: &str, name: &str) -> io::Result<BufReader<File>> {
 
     // Ensure the directory exists, create if necessary
     if !dir.exists() {
-        if let Err(e) = fs::create_dir_all(&dir) {
+        if let Err(_) = fs::create_dir_all(&dir) {
             return Err(io::Error::new(
                 io::ErrorKind::NotFound,
                 "Directory creation failed",
@@ -68,13 +71,37 @@ pub fn load_file_buf(path: &str, name: &str) -> io::Result<BufReader<File>> {
     let file = File::open(&file_path)?;
     Ok(BufReader::new(file))
 }
+pub fn has_file(path: &str, name: &str) -> bool {
+    let dir = Path::new(&get_directory()).join(path);
+    let file_path = dir.join(name);
+
+    if !dir.exists() {
+        return false;
+    }
+
+    if !file_path.exists() {
+        return false;
+    }
+
+    true
+}
+pub fn has_dir(path: &str) -> bool {
+    let dir = Path::new(&get_directory()).join(path);
+
+    if !dir.exists() {
+        return false;
+    }
+
+    true
+}
+
 pub fn load_file(path: &str, name: &str) -> String {
     let dir = Path::new(&get_directory()).join(path);
     let file_path = dir.join(name);
 
     if !dir.exists() {
         if let Err(e) = fs::create_dir_all(&dir) {
-            println!("[IMPORTANT] Couldn't create directories: {}", e);
+            log_message(format!("[IMPORTANT] Couldn't create directories: {}", e));
             return String::new();
         }
         return String::new();
@@ -82,7 +109,7 @@ pub fn load_file(path: &str, name: &str) -> String {
 
     if !file_path.exists() {
         if let Err(e) = File::create(&file_path) {
-            println!("[IMPORTANT] Couldn't create file: {}", e);
+            log_message(format!("[IMPORTANT] Couldn't create file: {}", e));
         }
         return String::new();
     }
@@ -100,17 +127,17 @@ pub fn save_file(path: &str, name: &str, value: &str) {
 
     if !dir.exists() {
         if let Err(e) = fs::create_dir_all(&dir) {
-            println!("[IMPORTANT] Couldn't create directories: {}", e);
+            log_message(format!("[IMPORTANT] Couldn't create directories: {}", e));
             return;
         }
     }
 
     if let Err(e) = fs::write(&file_path, value) {
-        println!(
+        log_message(format!(
             "[IMPORTANT] Couldn't write file {}: {}",
             file_path.display(),
             e
-        );
+        ));
     }
 }
 
@@ -185,4 +212,123 @@ pub fn get_used_ram() -> String {
     let used = sys.used_memory() * 1024; // kB to bytes
     let total = sys.total_memory() * 1024;
     format!("{}/{}", design_byte(used), design_byte(total))
+}
+
+// Helper to download the zip file content to a file on disk
+async fn download_zip(url: &str, as_name: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let response = reqwest::get(url).await?;
+
+    // Check for successful response status
+    if !response.status().is_success() {
+        return Err(format!("Failed to download file: Status {}", response.status()).into());
+    }
+
+    let mut zip_file = File::create(as_name)?;
+    let body = response.bytes().await?;
+    io::copy(&mut &*body, &mut zip_file)?;
+
+    Ok(())
+}
+
+fn extract_zip_contents_to_folder(
+    zip_path: &Path,
+    target_dir: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let file = File::open(zip_path)?;
+    let mut archive = ZipArchive::new(file)?;
+
+    let staging_dir = target_dir.with_extension("staging");
+
+    let _ = fs::remove_dir_all(&staging_dir);
+    fs::create_dir_all(&staging_dir)?;
+
+    let mut first_item_name: Option<PathBuf> = None;
+
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i)?;
+        let entry_path = staging_dir.join(file.sanitized_name());
+
+        if i == 0 {
+            if file.name().ends_with('/') || file.sanitized_name().components().count() == 1 {
+                first_item_name = Some(file.sanitized_name());
+            }
+        }
+
+        if file.name().ends_with('/') {
+            fs::create_dir_all(&entry_path)?;
+        } else {
+            if let Some(parent) = entry_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            let mut out_file = File::create(entry_path)?;
+            io::copy(&mut file, &mut out_file)?;
+        }
+    }
+
+    if let Some(root_path) = first_item_name {
+        let root_dir = staging_dir.join(&root_path);
+
+        if root_dir.is_dir() {
+            let root_contents_count = fs::read_dir(&staging_dir)?.count();
+
+            if root_contents_count == 1
+                || (root_contents_count > 1 && fs::metadata(&root_dir).is_ok())
+            {
+                let _ = fs::remove_dir_all(target_dir);
+                fs::create_dir_all(target_dir)?;
+
+                for entry in fs::read_dir(root_dir)? {
+                    let entry = entry?;
+                    let src = entry.path();
+                    let dest = target_dir.join(entry.file_name());
+
+                    if let Err(_) = fs::rename(&src, &dest) {
+                        if src.is_file() {
+                            fs::copy(&src, &dest)?;
+                        } else {
+                            if entry.path().is_dir() {
+                                fs::rename(&src, &dest)?;
+                            }
+                        }
+                    }
+                }
+
+                let _ = fs::remove_dir_all(&staging_dir);
+                return Ok(());
+            }
+        }
+    }
+
+    log_message("Extracting directly (no single root folder detected).");
+    let _ = fs::remove_dir_all(target_dir);
+    fs::rename(&staging_dir, target_dir)?;
+
+    Ok(())
+}
+
+pub async fn download_and_extract_zip(url: &str, as_name: &str) {
+    let base_dir = PathBuf::from(get_directory());
+    let zip_filename = format!("{}.zip", Uuid::new_v4()); // Use a unique name for the downloaded ZIP file
+    let zip_path = base_dir.join(&zip_filename);
+    let target_dir = base_dir.join(as_name);
+
+    // Step 1: Download the ZIP file
+    if let Err(e) = download_zip(url, &zip_path).await {
+        log_message(format!("Error downloading file: {}", e));
+        return;
+    }
+
+    // Step 2: Extract and flatten the ZIP file contents into the target directory
+    if let Err(e) = extract_zip_contents_to_folder(&zip_path, &target_dir) {
+        log_message(format!("Error extracting ZIP file contents: {}", e));
+    }
+
+    // Step 3: Clean up the downloaded ZIP file
+    if let Err(e) = fs::remove_file(&zip_path) {
+        log_message(format!(
+            "Error cleaning up ZIP file {}: {}",
+            zip_path.display(),
+            e
+        ));
+    }
 }
