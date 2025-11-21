@@ -97,4 +97,45 @@ impl AppState {
         };
         json
     }
+    pub fn with_width(&self, width: u16) -> Self {
+        let mut new = self.clone();
+        new.cpu = Self::downsample_to_fit_width(&new.cpu, width);
+        new.ram = Self::downsample_to_fit_width(&new.ram, width);
+        new.ping = Self::downsample_to_fit_width(&new.ping, width);
+        new.net_up = Self::downsample_to_fit_width(&new.net_up, width);
+        new.net_down = Self::downsample_to_fit_width(&new.net_down, width);
+        new
+    }
+
+    fn downsample_to_fit_width(data: &[(f64, f64)], width: u16) -> Vec<(f64, f64)> {
+        let width_usize = (width as usize) * 2;
+        let len = data.len();
+
+        if len >= width_usize {
+            // Trim data to fit
+            data[len - width_usize..].to_vec()
+        } else {
+            let mut result = Vec::with_capacity(width_usize);
+
+            // Define X spacing (so dummy points are properly spaced across the canvas)
+            let dx = 1.0;
+            let pad_len = width_usize - len;
+
+            // If we have real data, use its first x position to determine where to start padding
+            let start_x = data
+                .first()
+                .map(|(x, _)| x - (dx * pad_len as f64))
+                .unwrap_or(0.0);
+            let _ = data.first().map(|(_, y)| *y).unwrap_or(0.0);
+
+            // Fill padding with increasing x positions so they're visible
+            for i in 0..pad_len {
+                result.push((start_x + i as f64 * dx, -1 as f64));
+            }
+
+            // Then append the real data
+            result.extend_from_slice(data);
+            result
+        }
+    }
 }

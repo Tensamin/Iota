@@ -1,3 +1,6 @@
+use std::sync::Arc;
+
+use crate::communities::community::Community;
 use crate::data::communication::{CommunicationType, CommunicationValue, DataTypes};
 use crate::gui::log_panel::log_message;
 use axum::http::HeaderValue;
@@ -27,7 +30,16 @@ pub async fn handle(
     let (status, content, body_text) = if path_parts.len() >= 3 {
         match path_parts[2] {
             "app_state" => (StatusCode::OK, "application/json", {
-                let json = APP_STATE.lock().unwrap().clone();
+                let with = headers
+                    .get("size")
+                    .unwrap_or(&HeaderValue::from_static("50"))
+                    .to_str()
+                    .unwrap()
+                    .to_string();
+                let json = APP_STATE
+                    .lock()
+                    .unwrap()
+                    .with_width(with.parse::<u16>().unwrap_or(50));
                 json.to_json().to_string()
             }),
             "users" => (StatusCode::OK, "application/json", {
@@ -44,7 +56,7 @@ pub async fn handle(
                                     .add_data(DataTypes::user, user.to_json());
                                 cv.to_json().to_string()
                             } else {
-                                "{}".to_string()
+                                "{\"type\":\"error\"}".to_string()
                             }
                         }
                         "remove" => {
@@ -62,7 +74,7 @@ pub async fn handle(
                             }
                             json.to_string()
                         }
-                        _ => "{}".to_string(),
+                        _ => "{\"type\":\"error\"}".to_string(),
                     }
                 } else {
                     let users = user_manager::get_users();
@@ -74,15 +86,59 @@ pub async fn handle(
                 }
             }),
             "communities" => (StatusCode::OK, "application/json", {
-                let communities = community_manager::get_communities().await;
-                let mut json = JsonValue::new_array();
-                for community in communities {
-                    let _ = json.push(community.to_json().await);
+                if path_parts.len() >= 4 {
+                    match path_parts[3] {
+                        "add" => {
+                            let name = headers.get("name").unwrap().to_str().unwrap();
+                            let community = Arc::new(Community::create(name.to_string()).await);
+                            community_manager::add_community(community).await;
+                            "{\"type\":\"success\"}".to_string()
+                        }
+                        "remove" => {
+                            let name = headers.get("name").unwrap().to_str().unwrap();
+                            community_manager::remove_community(name).await;
+                            "{\"type\":\"success\"}".to_string()
+                        }
+                        "get" => {
+                            let communities = community_manager::get_communities().await;
+                            let mut json = JsonValue::new_array();
+                            for community in communities {
+                                let _ = json.push(community.to_json().await);
+                            }
+                            json.to_string()
+                        }
+                        _ => "{\"type\":\"error\"}".to_string(),
+                    }
+                } else {
+                    let communities = community_manager::get_communities().await;
+                    let mut json = JsonValue::new_array();
+                    for community in communities {
+                        let _ = json.push(community.to_json().await);
+                    }
+                    json.to_string()
                 }
-                json.to_string()
             }),
             "settings" => (StatusCode::OK, "application/json", {
-                CONFIG.lock().await.config.to_string()
+                if path_parts.len() >= 4 {
+                    match path_parts[3] {
+                        "set" => {
+                            if let Some(key) = headers.get("key") {
+                                if let Some(value) = headers.get("value") {
+                                    CONFIG
+                                        .lock()
+                                        .await
+                                        .config
+                                        .insert(key.to_str().unwrap(), value);
+                                    "{\"type\":\"success\"}".to_string()
+                                }
+                            }
+                        }
+                        "get" => CONFIG.lock().await.config.to_string(),
+                        _ => "{\"type\":\"error\"}".to_string(),
+                    }
+                } else {
+                    CONFIG.lock().await.config.to_string()
+                }
             }),
 
             _ => {

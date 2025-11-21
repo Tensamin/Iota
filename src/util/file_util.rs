@@ -121,6 +121,31 @@ pub fn load_file(path: &str, name: &str) -> String {
     content
 }
 
+pub fn load_file_vec(path: &str, name: &str) -> Vec<u8> {
+    let dir = Path::new(&get_directory()).join(path);
+    let file_path = dir.join(name);
+
+    if !dir.exists() {
+        if let Err(e) = fs::create_dir_all(&dir) {
+            log_message(format!("[IMPORTANT] Couldn't create directories: {}", e));
+            return Vec::new();
+        }
+        return Vec::new();
+    }
+
+    if !file_path.exists() {
+        if let Err(e) = File::create(&file_path) {
+            log_message(format!("[IMPORTANT] Couldn't create file: {}", e));
+        }
+        return Vec::new();
+    }
+
+    let mut content = Vec::new();
+    if let Ok(mut f) = File::open(&file_path) {
+        let _ = f.read_to_end(&mut content);
+    }
+    content
+}
 pub fn save_file(path: &str, name: &str, value: &str) {
     let dir = Path::new(&get_directory()).join(path);
     let file_path = dir.join(name);

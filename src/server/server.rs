@@ -1,13 +1,12 @@
 use crate::gui::log_panel::log_message;
 use crate::server::api;
 use crate::server::socket::handle;
-use crate::util::file_util::{load_file, load_file_buf};
+use crate::util::file_util::{load_file_buf, load_file_vec};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use futures::{StreamExt, TryFutureExt};
 use http_body_util::Full;
 use hyper::body::Bytes;
-use hyper::header::CONTENT_LENGTH;
 use hyper::{
     Request as HttpRequest, Response as HttpResponse, StatusCode, body::Incoming,
     server::conn::http1, upgrade,
@@ -113,43 +112,49 @@ impl Service<HttpRequest<Incoming>> for HttpService {
                 } else {
                     let mut path_parts: Vec<&str> = path.split("/").collect();
                     let name = path_parts.remove(path_parts.len() - 1);
-
-                    let (status, content, body_text): (StatusCode, &str, String) =
-                        if name.is_empty() {
-                            let content = load_file("web", "index.html");
+                    let name = if name.is_empty() {
+                        "index.html"
+                    } else if name.contains(".") && name.contains("?") {
+                        name.split("?").next().unwrap()
+                    } else if name.contains(".") {
+                        name
+                    } else {
+                        &format!("{}.html", name)
+                    };
+                    let code = if let Some(ext) = name.split(".").last() {
+                        match ext {
+                            "html" => "text/html",
+                            "css" => "text/css",
+                            "ico" => "image/x-icon",
+                            "png" => "image/png",
+                            "js" => "application/javascript",
+                            "json" => "application/json",
+                            _ => "application/octet-stream",
+                        }
+                    } else {
+                        "application/octet-stream"
+                    };
+                    let (status, content, body_text): (StatusCode, &str, Vec<u8>) = {
+                        let content = load_file_vec(&format!("web{}/", path_parts.join("/")), name);
+                        if content.is_empty() {
+                            let content = load_file_vec("web", "404.html");
                             if content.is_empty() {
-                                let content = load_file("web", "404.html");
-                                if content.is_empty() {
-                                    (
-                                        StatusCode::NOT_FOUND,
-                                        "text/html",
-                                        include_str!("../../static/web/404.html").to_string(),
-                                    )
-                                } else {
-                                    (StatusCode::OK, "text/html", content)
-                                }
+                                (
+                                    StatusCode::NOT_FOUND,
+                                    code,
+                                    include_str!("../../static/web/404.html")
+                                        .as_bytes()
+                                        .to_vec(),
+                                )
                             } else {
-                                (StatusCode::OK, "text/html", content)
+                                (StatusCode::OK, code, content)
                             }
                         } else {
-                            let content = load_file(&format!("web{}/", path_parts.join("/")), name);
-                            if content.is_empty() {
-                                let content = load_file("web", "404.html");
-                                if content.is_empty() {
-                                    (
-                                        StatusCode::NOT_FOUND,
-                                        "text/html",
-                                        include_str!("../../static/web/404.html").to_string(),
-                                    )
-                                } else {
-                                    (StatusCode::OK, "text/html", content)
-                                }
-                            } else {
-                                (StatusCode::OK, "text/html", content)
-                            }
-                        };
+                            (StatusCode::OK, code, content)
+                        }
+                    };
 
-                    let body = Full::new(Bytes::from(body_text.to_string()));
+                    let body = Full::new(Bytes::from(body_text.to_vec()));
                     let response = HttpResponse::builder()
                         .header("Content-Type", content)
                         .status(status)
