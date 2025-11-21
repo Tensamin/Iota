@@ -58,10 +58,10 @@ async fn main() {
     }
 
     // BASIC CONFIGURATION
-    CONFIG.lock().unwrap().load();
-    if !CONFIG.lock().unwrap().config.has_key("iota_id") {
-        CONFIG.lock().unwrap().change("iota_id", Uuid::new_v4());
-        CONFIG.lock().unwrap().update();
+    CONFIG.lock().await.load();
+    if !CONFIG.lock().await.config.has_key("iota_id") {
+        CONFIG.lock().await.change("iota_id", Uuid::new_v4());
+        CONFIG.lock().await.update();
     }
 
     // USER MANAGEMENT
@@ -84,7 +84,7 @@ async fn main() {
         "IOTA ID:  {}-####-####-####-############",
         CONFIG
             .lock()
-            .unwrap()
+            .await
             .get_iota_id()
             .to_string()
             .split("-")
@@ -107,7 +107,7 @@ async fn main() {
         sb1 = sb1 + ",";
     }
     log_message(format!("Community IDS: {}", sb1));
-    let port = CONFIG.lock().unwrap().get_port();
+    let port = CONFIG.lock().await.get_port();
     if start(port).await {
         log_message(format("community_active", &[&port.to_string()]));
     } else {
@@ -133,7 +133,7 @@ async fn main() {
                     .add_data(DataTypes::user_ids, String(sb.to_string()))
                     .add_data(
                         DataTypes::iota_id,
-                        String(CONFIG.lock().unwrap().get_iota_id().to_string()),
+                        String(CONFIG.lock().await.get_iota_id().to_string()),
                     )
                     .to_json()
                     .to_string()

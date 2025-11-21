@@ -1,9 +1,11 @@
+use crate::data::communication::{CommunicationType, CommunicationValue, DataTypes};
 use crate::gui::log_panel::log_message;
 use axum::http::HeaderValue;
 use http_body_util::Full;
 use hyper::body::Bytes;
 use hyper::{HeaderMap, Response as HttpResponse, StatusCode};
 use json::JsonValue;
+use uuid::Uuid;
 
 use crate::util::config_util::CONFIG;
 use crate::{APP_STATE, communities::community_manager, users::user_manager};
@@ -31,8 +33,27 @@ pub async fn handle(
             "users" => (StatusCode::OK, "application/json", {
                 if path_parts.len() >= 4 {
                     match path_parts[3] {
-                        "add" => "{}".to_string(),
-                        "remove" => "{}".to_string(),
+                        "add" => {
+                            let username = headers.get("username");
+                            if let (Some(user), Some(_private_key)) = user_manager::create_user(
+                                &username.unwrap().to_str().unwrap().to_string(),
+                            )
+                            .await
+                            {
+                                let cv = CommunicationValue::new(CommunicationType::create_user)
+                                    .add_data(DataTypes::user, user.to_json());
+                                cv.to_json().to_string()
+                            } else {
+                                "{}".to_string()
+                            }
+                        }
+                        "remove" => {
+                            let uuid =
+                                Uuid::parse_str(headers.get("uuid").unwrap().to_str().unwrap())
+                                    .unwrap();
+                            user_manager::remove_user(uuid);
+                            "{}".to_string()
+                        }
                         "get" => {
                             let users = user_manager::get_users();
                             let mut json = JsonValue::new_array();
@@ -61,7 +82,7 @@ pub async fn handle(
                 json.to_string()
             }),
             "settings" => (StatusCode::OK, "application/json", {
-                CONFIG.lock().unwrap().config.to_string()
+                CONFIG.lock().await.config.to_string()
             }),
 
             _ => {

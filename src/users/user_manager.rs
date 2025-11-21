@@ -44,7 +44,7 @@ pub async fn create_user(username: &str) -> (Option<UserProfile>, Option<String>
         reset_token,
     );
 
-    auth_connector::complete_register(&up, &CONFIG.lock().unwrap().get_iota_id().to_string()).await;
+    auth_connector::complete_register(&up, &CONFIG.lock().await.get_iota_id().to_string()).await;
     save_file(
         "",
         &format!("{}.tu", username),

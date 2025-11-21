@@ -1,7 +1,7 @@
 use crate::util::file_util::{load_file, save_file};
 use json::JsonValue;
 use once_cell::sync::Lazy;
-use std::sync::Mutex;
+use tokio::sync::Mutex;
 use uuid::Uuid;
 
 pub static CONFIG: Lazy<Mutex<ConfigUtil>> = Lazy::new(|| Mutex::new(ConfigUtil::new()));

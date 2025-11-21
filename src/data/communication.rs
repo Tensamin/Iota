@@ -77,6 +77,8 @@ pub enum DataTypes {
     challenge,
     community_title,
     communities,
+
+    user,
 }
 
 impl DataTypes {
@@ -153,6 +155,8 @@ impl DataTypes {
             "challenge" => DataTypes::challenge,
             "communitytitle" => DataTypes::community_title,
             "communities" => DataTypes::communities,
+
+            "user" => DataTypes::user,
             _ => DataTypes::error_type, // fallback if unknown
         }
     }
@@ -215,6 +219,8 @@ pub enum CommunicationType {
     end_call,
     function,
     update,
+
+    create_user,
 }
 impl CommunicationType {
     pub fn parse(p0: String) -> CommunicationType {
@@ -269,6 +275,8 @@ impl CommunicationType {
             "endcall" => CommunicationType::end_call,
             "function" => CommunicationType::function,
             "update" => CommunicationType::update,
+
+            "createuser" => CommunicationType::create_user,
             _ => CommunicationType::error,
         }
     }
