@@ -17,6 +17,7 @@ pub async fn handle(
     path: &str,
     is_local: &bool,
     headers: HeaderMap<HeaderValue>,
+    body_string: Option<String>,
 ) -> HttpResponse<Full<Bytes>> {
     if !is_local {
         return HttpResponse::builder()
@@ -26,7 +27,7 @@ pub async fn handle(
     }
 
     let path_parts: Vec<&str> = path.split("/").collect();
-
+    let body: Option<JsonValue> = body_string.map(|s| json::parse(&s).unwrap());
     let (status, content, body_text) = if path_parts.len() >= 3 {
         match path_parts[2] {
             "app_state" => (StatusCode::OK, "application/json", {
@@ -46,25 +47,32 @@ pub async fn handle(
                 if path_parts.len() >= 4 {
                     match path_parts[3] {
                         "add" => {
-                            let username = headers.get("username");
-                            if let (Some(user), Some(_private_key)) = user_manager::create_user(
-                                &username.unwrap().to_str().unwrap().to_string(),
-                            )
-                            .await
-                            {
-                                let cv = CommunicationValue::new(CommunicationType::create_user)
-                                    .add_data(DataTypes::user, user.frontend());
-                                cv.to_json().to_string()
-                            } else {
+                            if body.is_none() {
                                 "{\"type\":\"error\"}".to_string()
+                            } else {
+                                let username =
+                                    body.unwrap()["username"].as_str().unwrap().to_string();
+                                if let (Some(user), Some(_private_key)) =
+                                    user_manager::create_user(&username).await
+                                {
+                                    let cv =
+                                        CommunicationValue::new(CommunicationType::create_user)
+                                            .add_data(DataTypes::user, user.frontend());
+                                    cv.to_json().to_string()
+                                } else {
+                                    "{\"type\":\"error\"}".to_string()
+                                }
                             }
                         }
                         "remove" => {
-                            let uuid =
-                                Uuid::parse_str(headers.get("uuid").unwrap().to_str().unwrap())
+                            if body.is_none() {
+                                "{\"type\":\"error\"}".to_string()
+                            } else {
+                                let uuid = Uuid::parse_str(body.unwrap()["uuid"].as_str().unwrap())
                                     .unwrap();
-                            user_manager::remove_user(uuid);
-                            "{}".to_string()
+                                user_manager::remove_user(uuid);
+                                "{}".to_string()
+                            }
                         }
                         "get" => {
                             let users = user_manager::get_users();
@@ -89,15 +97,23 @@ pub async fn handle(
                 if path_parts.len() >= 4 {
                     match path_parts[3] {
                         "add" => {
-                            let name = headers.get("name").unwrap().to_str().unwrap();
-                            let community = Arc::new(Community::create(name.to_string()).await);
-                            community_manager::add_community(community).await;
-                            "{\"type\":\"success\"}".to_string()
+                            if body.is_none() {
+                                "{\"type\":\"error\"}".to_string()
+                            } else {
+                                let name = body.unwrap()["name"].as_str().unwrap().to_string();
+                                let community = Arc::new(Community::create(name).await);
+                                community_manager::add_community(community).await;
+                                "{\"type\":\"success\"}".to_string()
+                            }
                         }
                         "remove" => {
-                            let name = headers.get("name").unwrap().to_str().unwrap();
-                            community_manager::remove_community(name).await;
-                            "{\"type\":\"success\"}".to_string()
+                            if body.is_none() {
+                                "{\"type\":\"error\"}".to_string()
+                            } else {
+                                let name = body.unwrap()["name"].as_str().unwrap().to_string();
+                                community_manager::remove_community(&name).await;
+                                "{\"type\":\"success\"}".to_string()
+                            }
                         }
                         "get" => {
                             let communities = community_manager::get_communities().await;

@@ -17,8 +17,8 @@ futures-util = "*"
 hex = "*"
 hkdf = "*"
 hmac = "*"
-hyper = { version = "*", features = ["full"] }
-hyper-util = "*"
+hyper-util = { version = "*" }
+hyper = { version = "1.8.1", features = ["capi", "client", "full", "http1", "http2", "nightly", "server"] }
 http-body-util = "*"
 json = "*"
 native-tls = { version = "*", default-features = false }
