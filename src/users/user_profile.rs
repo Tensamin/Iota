@@ -1,6 +1,9 @@
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use crate::auth::auth_connector;
 use crate::gui::log_panel::log_message;
 use crate::users::user_manager;
+use crate::util::file_util::{has_file, load_file, used_dir_space};
 use base64::{Engine as _, engine::general_purpose};
 use json::{JsonValue, object};
 use rand::Rng;
@@ -15,6 +18,7 @@ pub struct UserProfile {
     pub public_key: String,
     pub private_key_hash: String,
     pub reset_token: String,
+    pub created_at: i64,
     pub display_name: Option<String>,
 }
 
@@ -33,6 +37,10 @@ impl UserProfile {
             display_name,
             public_key,
             private_key_hash,
+            created_at: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as i64,
             reset_token,
         }
     }
@@ -43,6 +51,7 @@ impl UserProfile {
             "username" => self.username.clone(),
             "public_key" => self.public_key.clone(),
             "private_key_hash" => self.private_key_hash.clone(),
+            "created_at" => self.created_at,
             "reset_token" => self.reset_token.clone()
         };
         if let Some(d) = &self.display_name {
@@ -56,28 +65,36 @@ impl UserProfile {
             "username" => self.username.clone(),
             "public_key" => self.public_key.clone(),
             "private_key_hash" => self.private_key_hash.clone(),
+            "created_at" => self.created_at,
+            "storage" => used_dir_space(&format!("users/{}", self.user_id.to_string())),
         };
         if let Some(d) = &self.display_name {
             obj["display_name"] = d.clone().into();
         }
+        if has_file("", &format!("{}.tu", self.username.clone())) {
+            obj["tu"] = load_file("", &format!("{}.tu", self.username.clone())).into();
+        }
+
         obj
     }
     pub async fn from_json(j: &JsonValue) -> Option<Self> {
-        let uuid = Uuid::parse_str(j["uuid"].as_str()?).ok()?;
+        let user_id = Uuid::parse_str(j["uuid"].as_str()?).ok()?;
         let username = j["username"].as_str()?.to_string();
         let public_key = j["public_key"].as_str()?.to_string();
         let private_key_hash = j["private_key_hash"].as_str()?.to_string();
         let reset_token = j["reset_token"].as_str()?.to_string();
+        let created_at = j["created_at"].as_i64()?;
         let display_name = j["display_name"].as_str().map(|s| s.to_string());
 
-        let mut up = UserProfile::new(
-            uuid,
+        let mut up = UserProfile {
+            user_id,
             username,
             display_name,
             public_key,
             private_key_hash,
+            created_at,
             reset_token,
-        );
+        };
 
         if j.has_key("migrate")
             || j.has_key("migrating")

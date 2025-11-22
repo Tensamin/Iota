@@ -190,6 +190,9 @@ pub fn get_directory() -> String {
 pub fn used_space() -> u64 {
     get_directory_size(&PathBuf::from(get_directory()))
 }
+pub fn used_dir_space(path: &str) -> u64 {
+    get_directory_size(&PathBuf::from(format!("{}/{}", get_directory(), path)))
+}
 
 pub fn get_directory_size(directory: &Path) -> u64 {
     let mut size = 0;

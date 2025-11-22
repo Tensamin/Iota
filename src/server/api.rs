@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use crate::auth::auth_connector::unregister_user;
 use crate::communities::community::Community;
 use crate::data::communication::{CommunicationType, CommunicationValue, DataTypes};
 use crate::gui::log_panel::log_message;
@@ -78,6 +79,11 @@ pub async fn handle(
                             } else {
                                 let uuid = Uuid::parse_str(body.unwrap()["uuid"].as_str().unwrap())
                                     .unwrap();
+                                unregister_user(
+                                    uuid,
+                                    &user_manager::get_user(uuid).unwrap().reset_token,
+                                )
+                                .await;
                                 user_manager::remove_user(uuid);
                                 "{}".to_string()
                             }
