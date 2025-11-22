@@ -28,7 +28,11 @@ pub async fn handle(
 
     let path_parts: Vec<&str> = path.split("/").collect();
     let body: Option<JsonValue> = if body_string.is_some() {
-        body_string.map(|s| json::parse(&s).unwrap())
+        if let Ok(body_json) = json::parse(&body_string.unwrap()) {
+            Some(body_json)
+        } else {
+            None
+        }
     } else {
         None
     };
