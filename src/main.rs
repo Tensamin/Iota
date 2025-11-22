@@ -29,7 +29,6 @@ use crate::omikron::omikron_connection::OmikronConnection;
 use crate::server::server::start;
 use crate::users::user_manager;
 use crate::util::config_util::CONFIG;
-use crate::util::file_util::download_and_extract_zip;
 use crate::util::file_util::has_dir;
 
 pub static APP_STATE: LazyLock<Arc<Mutex<AppState>>> =

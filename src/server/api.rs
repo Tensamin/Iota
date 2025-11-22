@@ -27,7 +27,11 @@ pub async fn handle(
     }
 
     let path_parts: Vec<&str> = path.split("/").collect();
-    let body: Option<JsonValue> = body_string.map(|s| json::parse(&s).unwrap());
+    let body: Option<JsonValue> = if body_string.is_some() {
+        body_string.map(|s| json::parse(&s).unwrap())
+    } else {
+        None
+    };
     let (status, content, body_text) = if path_parts.len() >= 3 {
         match path_parts[2] {
             "app_state" => (StatusCode::OK, "application/json", {
