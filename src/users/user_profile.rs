@@ -50,7 +50,18 @@ impl UserProfile {
         }
         obj
     }
-
+    pub fn frontend(&self) -> JsonValue {
+        let mut obj = object! {
+            "uuid" => self.user_id.to_string(),
+            "username" => self.username.clone(),
+            "public_key" => self.public_key.clone(),
+            "private_key_hash" => self.private_key_hash.clone(),
+        };
+        if let Some(d) = &self.display_name {
+            obj["display_name"] = d.clone().into();
+        }
+        obj
+    }
     pub async fn from_json(j: &JsonValue) -> Option<Self> {
         let uuid = Uuid::parse_str(j["uuid"].as_str()?).ok()?;
         let username = j["username"].as_str()?.to_string();

@@ -53,7 +53,7 @@ pub async fn handle(
                             .await
                             {
                                 let cv = CommunicationValue::new(CommunicationType::create_user)
-                                    .add_data(DataTypes::user, user.to_json());
+                                    .add_data(DataTypes::user, user.frontend());
                                 cv.to_json().to_string()
                             } else {
                                 "{\"type\":\"error\"}".to_string()
@@ -70,7 +70,7 @@ pub async fn handle(
                             let users = user_manager::get_users();
                             let mut json = JsonValue::new_array();
                             for user in users {
-                                let _ = json.push(user.to_json());
+                                let _ = json.push(user.frontend());
                             }
                             json.to_string()
                         }
@@ -103,7 +103,7 @@ pub async fn handle(
                             let communities = community_manager::get_communities().await;
                             let mut json = JsonValue::new_array();
                             for community in communities {
-                                let _ = json.push(community.to_json().await);
+                                let _ = json.push(community.frontend().await);
                             }
                             json.to_string()
                         }
@@ -124,13 +124,17 @@ pub async fn handle(
                         "set" => {
                             if let Some(key) = headers.get("key") {
                                 if let Some(value) = headers.get("value") {
-                                    CONFIG
+                                    let _ = CONFIG
                                         .lock()
                                         .await
                                         .config
-                                        .insert(key.to_str().unwrap(), value);
+                                        .insert(key.to_str().unwrap(), value.to_str().unwrap());
                                     "{\"type\":\"success\"}".to_string()
+                                } else {
+                                    "{\"type\":\"error\"}".to_string()
                                 }
+                            } else {
+                                "{\"type\":\"error\"}".to_string()
                             }
                         }
                         "get" => CONFIG.lock().await.config.to_string(),

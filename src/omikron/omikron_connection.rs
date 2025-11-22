@@ -262,18 +262,24 @@ impl OmikronConnection {
 
                                 chat_files::add_message(
                                     cv.get_data(DataTypes::send_time)
-                                        .unwrap()
+                                        .unwrap_or(&JsonValue::new_object())
                                         .as_i64()
-                                        .unwrap_or(0) as u128,
+                                        .unwrap_or(
+                                            SystemTime::now()
+                                                .duration_since(UNIX_EPOCH)
+                                                .unwrap()
+                                                .as_millis()
+                                                as i64,
+                                        ) as u128,
                                     false,
                                     *receiver_id,
                                     *sender_id,
                                     cv.get_data(DataTypes::content).unwrap().as_str().unwrap(),
                                 );
-                                let response =
+                                let user_forward =
                                     CommunicationValue::new(CommunicationType::message_live)
                                         .with_id(cv.get_id())
-                                        .with_receiver(cv.get_receiver().unwrap())
+                                        .with_receiver(*receiver_id)
                                         .add_data(
                                             DataTypes::send_time,
                                             cv.get_data(DataTypes::send_time).unwrap().clone(),
@@ -288,7 +294,7 @@ impl OmikronConnection {
                                         );
                                 Self::send_message_static(
                                     &writer.clone(),
-                                    response.to_json().to_string(),
+                                    user_forward.to_json().to_string(),
                                 )
                                 .await;
                                 return;
