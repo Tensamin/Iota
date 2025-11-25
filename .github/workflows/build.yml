@@ -12,9 +12,9 @@ jobs:
       - name: Login to Registry
         run: |
           echo "${{ secrets.DOCKER_PASSWD }}" | docker login \
-            docker.tensamin.net \
             -u "${{ secrets.DOCKER_USER }}" \
-            --password-stdin
+            --password-stdin \
+            docker.tensamin.net
 
       - name: Build and Push
         run: |
