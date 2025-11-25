@@ -1,4 +1,4 @@
-use crate::auth::auth_connector;
+use crate::auth::{auth_connector, crypto_helper};
 use crate::users::user_profile::UserProfile;
 use crate::util::config_util::CONFIG;
 use crate::util::file_util::{load_file, save_file};
@@ -10,7 +10,8 @@ use rand::Rng;
 use rand_core::OsRng;
 use rand_core::RngCore;
 use sha2::{Digest, Sha256};
-use std::io;
+use std::io::{self};
+use std::str::FromStr;
 use std::sync::Mutex;
 use uuid::Uuid;
 use x448::{PublicKey, Secret};
@@ -18,6 +19,31 @@ use x448::{PublicKey, Secret};
 static USERS: Lazy<Mutex<Vec<UserProfile>>> = Lazy::new(|| Mutex::new(Vec::new()));
 static UNIQUE: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 
+// uuid::private_key
+pub async fn load_from_tu(username: &str) -> Result<(), ()> {
+    let file_content = load_file("", &format!("{}.tu", username));
+    let segments = file_content.split("::").collect::<Vec<&str>>();
+    let uuid = Uuid::from_str(segments[0]).unwrap();
+    let b64_private_key = segments[1];
+
+    let secret: Secret = crypto_helper::load_secret_key(b64_private_key).unwrap();
+    let public_key = PublicKey::from(&secret);
+
+    let mut bytes = [0u8; 192];
+    OsRng.fill(bytes.as_mut());
+    let reset_token = STANDARD.encode(&bytes);
+
+    let user_profile = UserProfile::new(
+        uuid,
+        username.to_string(),
+        Some(username.to_string()),
+        crypto_helper::public_key_to_base64(&public_key),
+        crypto_helper::hex_hash(b64_private_key),
+        reset_token,
+    );
+    USERS.lock().unwrap().push(user_profile);
+    Ok(())
+}
 pub async fn create_user(username: &str) -> (Option<UserProfile>, Option<String>) {
     let user_id = auth_connector::get_register().await.unwrap();
     let mut buf = [0u8; 56];

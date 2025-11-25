@@ -5,7 +5,6 @@ use std::sync::LazyLock;
 use std::sync::Mutex;
 use tokio::sync::RwLock;
 use tokio::time::{Duration, sleep};
-use tower::make::AsService;
 use uuid::Uuid;
 
 mod auth;
@@ -23,8 +22,9 @@ use crate::communities::community_manager;
 use crate::communities::interactables::registry;
 use crate::data::communication::{CommunicationType, CommunicationValue, DataTypes};
 use crate::gui::app_state::AppState;
+use crate::gui::log_panel;
 use crate::gui::log_panel::{log_message, log_message_trans};
-use crate::gui::{log_panel, ratatui_interface};
+use crate::gui::tui;
 use crate::langu::language_creator;
 use crate::langu::language_manager::format;
 use crate::omikron::omikron_connection::OMIKRON_CONNECTION;
@@ -56,10 +56,7 @@ async fn main() {
 
     // UI
     log_panel::setup();
-    if let Err(e) = ratatui_interface::launch() {
-        println!("Ui launch failed: {}", &e.to_string());
-        return;
-    }
+    tui::start_tui();
 
     // BASIC CONFIGURATION
     CONFIG.lock().await.load();
