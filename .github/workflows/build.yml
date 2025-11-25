@@ -1,0 +1,22 @@
+name: Build & Publish Docker Image
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to Registry
+        run: |
+          echo "${{ secrets.DOCKER_PASSWD }}" | docker login \
+            docker.tensamin.net \
+            -u "${{ secrets.DOCKER_USER }}" \
+            --password-stdin
+
+      - name: Build and Push
+        run: |
+          docker build -t docker.tensamin.net/iota:latest .
+          docker push docker.tensamin.net/iota:latest
