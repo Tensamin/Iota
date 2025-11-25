@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use crate::SHUTDOWN;
 use crate::auth::auth_connector::unregister_user;
 use crate::communities::community::Community;
 use crate::data::communication::{CommunicationType, CommunicationValue, DataTypes};
@@ -39,6 +40,14 @@ pub async fn handle(
     };
     let (status, content, body_text) = if path_parts.len() >= 3 {
         match path_parts[2] {
+            "shutdown" => {
+                *SHUTDOWN.write().await = true;
+                (
+                    StatusCode::OK,
+                    "application/json",
+                    "{\"type\":\"success\"}".to_string(),
+                )
+            }
             "app_state" => (StatusCode::OK, "application/json", {
                 let with = headers
                     .get("size")

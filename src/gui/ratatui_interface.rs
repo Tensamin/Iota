@@ -4,7 +4,7 @@ use std::{
     time::Duration,
 };
 
-use crate::gui::nav_bar::NavBar;
+use crate::{SHUTDOWN, gui::nav_bar::NavBar};
 use color_eyre::Result;
 use crossterm::{
     execute,
@@ -39,6 +39,9 @@ fn init_terminal() {
 async fn run() -> Result<()> {
     init_terminal();
     loop {
+        if *SHUTDOWN.read().await {
+            return Ok(());
+        }
         NAV_BAR.lock().await.current_screen.renderf();
         tokio::time::sleep(Duration::from_millis(1000)).await;
     }

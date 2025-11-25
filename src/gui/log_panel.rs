@@ -1,4 +1,5 @@
 use crate::APP_STATE;
+use crate::SHUTDOWN;
 use crate::gui::ratatui_interface::TERMINAL;
 use crate::gui::widgets::betterblock::draw_block_joins;
 use crate::langu::language_manager::format;
@@ -80,12 +81,15 @@ fn downsample_to_fit_width(data: &[(f64, f64)], width: u16) -> Vec<(f64, f64)> {
 
 pub fn setup() {
     // Start a background thread to sample metrics
-    thread::spawn(move || {
+    thread::spawn(async move || {
         let mut sys = System::new_with_specifics(RefreshKind::new());
         let mut last_total_received = 0u64;
         let mut last_total_transmitted = 0u64;
         let mut counter = 0.0;
         loop {
+            if *SHUTDOWN.read().await {
+                break;
+            }
             sys.refresh_all();
 
             let mut tcpu = 0;

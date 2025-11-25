@@ -1,3 +1,4 @@
+use crate::SHUTDOWN;
 use crate::gui::log_panel::log_message;
 use crate::server::api;
 use crate::server::socket::handle;
@@ -233,6 +234,9 @@ async fn run_http_server(port: u16) -> bool {
 
     tokio::spawn(async move {
         loop {
+            if *SHUTDOWN.read().await {
+                break;
+            }
             match listener.accept().await {
                 std::result::Result::Ok((stream, addr)) => {
                     let service = HttpService { peer_addr: addr };
@@ -287,6 +291,9 @@ async fn run_tls_server(port: u16, tls_config: Arc<ServerConfig>) -> bool {
 
     tokio::spawn(async move {
         loop {
+            if *SHUTDOWN.read().await {
+                break;
+            }
             match listener.accept().await {
                 std::result::Result::Ok((stream, addr)) => {
                     let service = HttpService { peer_addr: addr };

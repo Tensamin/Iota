@@ -1,3 +1,4 @@
+use crate::SHUTDOWN;
 use crate::communities::{community_connection::CommunityConnection, community_manager};
 use crate::gui::log_panel::log_message;
 use crate::omikron::omikron_connection::OmikronConnection;
@@ -26,6 +27,9 @@ pub fn handle(
                 let community_conn: Arc<CommunityConnection> =
                     Arc::from(CommunityConnection::new(writer, reader, community));
                 loop {
+                    if *SHUTDOWN.read().await {
+                        break;
+                    }
                     let msg_result = {
                         let mut session_lock = community_conn.receiver.write().await;
                         session_lock.next().await

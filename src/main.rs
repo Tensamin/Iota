@@ -5,6 +5,7 @@ use std::sync::LazyLock;
 use std::sync::Mutex;
 use tokio::sync::RwLock;
 use tokio::time::{Duration, sleep};
+use tower::make::AsService;
 use uuid::Uuid;
 
 mod auth;
@@ -128,6 +129,9 @@ async fn main() {
         .await;*/
     }
     loop {
+        if *SHUTDOWN.read().await {
+            break;
+        }
         let omikron: Arc<OmikronConnection> = Arc::new(OmikronConnection::new());
         omikron.connect().await;
         omikron
@@ -148,6 +152,9 @@ async fn main() {
         *omikron_connection = Some(omikron.clone());
         log_message_trans("setup_completed");
         loop {
+            if *SHUTDOWN.read().await {
+                break;
+            }
             if !omikron.is_connected().await {
                 break;
             }

@@ -1,3 +1,4 @@
+use crate::SHUTDOWN;
 use crate::auth::local_auth;
 use crate::data::communication::{CommunicationType, CommunicationValue, DataTypes};
 use crate::gui::log_panel::{log_cv, log_message, log_message_trans};
@@ -87,6 +88,9 @@ impl OmikronConnection {
     /// Connect loop with retry
     pub async fn connect(self: &Arc<Self>) {
         loop {
+            if *SHUTDOWN.read().await {
+                break;
+            }
             match connect_async("wss://app.tensamin.net/ws/iota/").await {
                 Ok((ws_stream, _)) => {
                     let (write_half, read_half) = ws_stream.split();
@@ -98,6 +102,9 @@ impl OmikronConnection {
                     let cloned_self = self.clone();
                     let handle = tokio::spawn(async move {
                         loop {
+                            if *SHUTDOWN.read().await {
+                                break;
+                            }
                             cloned_self.send_ping().await;
                             sleep(Duration::from_secs(1)).await;
                         }
@@ -139,6 +146,9 @@ impl OmikronConnection {
         let sel_arc_out = self.clone();
         tokio::spawn(async move {
             while let Some(msg) = read_half.next().await {
+                if *SHUTDOWN.read().await {
+                    break;
+                }
                 let waiting = waiting_out.clone();
                 let writer = writer_out.clone();
                 let is_connected = is_connected_out.clone();
