@@ -8,9 +8,8 @@ use base64::engine::general_purpose::STANDARD;
 use bytes::Bytes;
 use futures::StreamExt;
 use futures_util::TryFutureExt;
+use http_body_util::BodyExt;
 use http_body_util::Full;
-use http_body_util::{BodyExt, Collected};
-use hyper::upgrade::OnUpgrade;
 use hyper::{Method, StatusCode};
 use hyper::{
     Request as HttpRequest, Response as HttpResponse, body::Incoming, server::conn::http1, upgrade,
@@ -19,7 +18,6 @@ use hyper_util::rt::tokio::TokioIo;
 use hyper_util::service::TowerToHyperService;
 use rustls::ServerConfig;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
-use sha1::digest::generic_array::arr::Inc;
 use sha1::{Digest, Sha1};
 use std::error::Error;
 use std::io::ErrorKind;
@@ -27,7 +25,6 @@ use std::io::{self, BufReader};
 use std::net::{IpAddr, SocketAddr};
 use std::result::Result::Ok;
 use std::sync::Arc;
-use std::thread::panicking;
 use std::{future::Future, pin::Pin, time::Duration};
 use tokio::net::TcpListener;
 use tokio_rustls::TlsAcceptor;

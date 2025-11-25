@@ -1,7 +1,9 @@
 use json::{self, JsonValue::String};
+use once_cell::sync::Lazy;
 use std::sync::Arc;
 use std::sync::LazyLock;
 use std::sync::Mutex;
+use tokio::sync::RwLock;
 use tokio::time::{Duration, sleep};
 use uuid::Uuid;
 
@@ -33,6 +35,8 @@ use crate::util::file_util::has_dir;
 
 pub static APP_STATE: LazyLock<Arc<Mutex<AppState>>> =
     LazyLock::new(|| Arc::new(Mutex::new(AppState::new())));
+
+pub static SHUTDOWN: Lazy<RwLock<bool>> = Lazy::new(|| RwLock::new(false));
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 8)]
 #[allow(unused_must_use, dead_code)]

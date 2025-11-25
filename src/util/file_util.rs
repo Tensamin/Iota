@@ -1,6 +1,6 @@
 use std::ffi::OsStr;
 use std::fs::{self, File};
-use std::io::{self, BufReader, Cursor, Read};
+use std::io::{self, BufReader, Read};
 use std::path::{Path, PathBuf};
 use sysinfo::System;
 use uuid::Uuid;
