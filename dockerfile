@@ -1,7 +1,7 @@
 # Build stage
 FROM rust:latest AS builder
 
-WORKDIR .
+WORKDIR /app
 COPY . .
 
 RUN cargo build --release
@@ -9,10 +9,12 @@ RUN cargo build --release
 # Runtime stage
 FROM debian:bookworm-slim
 
+WORKDIR /app/data
+
 RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /target/release/iota /usr/local/bin/
+COPY --from=builder /app/target/release/iota ..
 
 EXPOSE 1984
 
-CMD ["iota"]
+CMD ["../iota"]
