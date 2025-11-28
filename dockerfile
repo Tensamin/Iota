@@ -7,7 +7,7 @@ COPY . .
 RUN cargo build --release
 
 # Runtime stage
-FROM debian:bookworm-slim
+FROM debian:sid
 
 WORKDIR /app/data
 
