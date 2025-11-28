@@ -17,4 +17,4 @@ COPY --from=builder /app/target/release/iota .
 
 EXPOSE 1984
 
-CMD ["iota"]
+CMD ["./iota"]
