@@ -1,5 +1,6 @@
 use json::{self, JsonValue::String};
 use once_cell::sync::Lazy;
+use pnet::datalink::NetworkInterface;
 use std::sync::Arc;
 use std::sync::LazyLock;
 use std::sync::Mutex;
@@ -22,6 +23,7 @@ use crate::communities::community_manager;
 use crate::communities::interactables::registry;
 use crate::data::communication::{CommunicationType, CommunicationValue, DataTypes};
 use crate::gui::app_state::AppState;
+use crate::gui::input_handler;
 use crate::gui::log_panel;
 use crate::gui::log_panel::{log_message, log_message_trans};
 use crate::gui::tui;
@@ -57,12 +59,16 @@ async fn main() {
     // UI
     log_panel::setup();
     tui::start_tui();
+    input_handler::setup_input_handler();
 
     // BASIC CONFIGURATION
-    CONFIG.lock().await.load();
-    if !CONFIG.lock().await.config.has_key("iota_id") {
-        CONFIG.lock().await.change("iota_id", Uuid::new_v4());
-        CONFIG.lock().await.update();
+    &CONFIG.write().await.load();
+    if !CONFIG.read().await.config.has_key("iota_id") {
+        CONFIG
+            .write()
+            .await
+            .change("iota_id", &Uuid::new_v4().to_string());
+        CONFIG.write().await.update();
     }
 
     // USER MANAGEMENT
@@ -84,7 +90,7 @@ async fn main() {
     log_message(format!(
         "IOTA ID:  {}-####-####-####-############",
         CONFIG
-            .lock()
+            .read()
             .await
             .get_iota_id()
             .to_string()
@@ -108,9 +114,18 @@ async fn main() {
         sb1 = sb1 + ",";
     }
     log_message(format!("Community IDS: {}", sb1));
-    let port = CONFIG.lock().await.get_port();
+    let port = CONFIG.read().await.get_port();
+    let mut ip = "0.0.0.0".to_string();
+    for iface in pnet::datalink::interfaces() {
+        let iface: NetworkInterface = iface;
+        let ipsv = format!("{}", iface.ips[0]);
+        let ips: &str = ipsv.split('/').next().unwrap();
+        if format!("{}", ips).starts_with("10.") || format!("{}", ips).starts_with("192.") {
+            ip = ips.to_string();
+        }
+    }
     if start(port).await {
-        log_message(format("community_active", &[&port.to_string()]));
+        log_message(format("community_active", &[&ip, &port.to_string()]));
     } else {
         if port < 1024 {
             log_message(format("community_start_error_admin", &[&port.to_string()]));
@@ -137,7 +152,7 @@ async fn main() {
                     .add_data(DataTypes::user_ids, String(sb.to_string()))
                     .add_data(
                         DataTypes::iota_id,
-                        String(CONFIG.lock().await.get_iota_id().to_string()),
+                        String(CONFIG.read().await.get_iota_id().to_string()),
                     )
                     .to_json()
                     .to_string()

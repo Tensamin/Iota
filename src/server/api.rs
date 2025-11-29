@@ -164,7 +164,7 @@ pub async fn handle(
                             if let Some(key) = headers.get("key") {
                                 if let Some(value) = headers.get("value") {
                                     let _ = CONFIG
-                                        .lock()
+                                        .write()
                                         .await
                                         .config
                                         .insert(key.to_str().unwrap(), value.to_str().unwrap());
@@ -176,11 +176,11 @@ pub async fn handle(
                                 "{\"type\":\"error\"}".to_string()
                             }
                         }
-                        "get" => CONFIG.lock().await.config.to_string(),
+                        "get" => CONFIG.read().await.config.to_string(),
                         _ => "{\"type\":\"error\"}".to_string(),
                     }
                 } else {
-                    CONFIG.lock().await.config.to_string()
+                    CONFIG.read().await.config.to_string()
                 }
             }),
 

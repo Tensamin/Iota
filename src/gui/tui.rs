@@ -1,11 +1,15 @@
 use std::{
-    default,
     io::{Stdout, stdout},
     sync::Arc,
     thread,
     time::Duration,
 };
 
+use crate::{
+    APP_STATE, SHUTDOWN,
+    gui::{settings_panel, widgets::betterblock::draw_block_joins},
+    util::config_util::CONFIG,
+};
 use crossterm::{
     execute,
     terminal::{EnterAlternateScreen, enable_raw_mode},
@@ -26,8 +30,6 @@ use tokio::{
     sync::{Mutex, RwLock},
 };
 
-use crate::{APP_STATE, SHUTDOWN};
-
 // ****** UTIL ******
 fn init_terminal() {
     let mut stdout = stdout();
@@ -36,7 +38,7 @@ fn init_terminal() {
 }
 
 // ****** MAIN ******
-pub static UNIQUE: Lazy<RwLock<bool>> = Lazy::new(|| RwLock::new(false));
+pub static UNIQUE: Lazy<RwLock<bool>> = Lazy::new(|| RwLock::new(true));
 pub static TERMINAL: Lazy<Arc<Mutex<Terminal<CrosstermBackend<Stdout>>>>> = Lazy::new(|| {
     Arc::new(Mutex::new(
         Terminal::new(CrosstermBackend::new(stdout())).unwrap(),
@@ -59,6 +61,13 @@ pub fn start_tui() {
     });
 }
 pub async fn render_tui() {
+    let password = CONFIG
+        .read()
+        .await
+        .get("password")
+        .as_str()
+        .unwrap_or("")
+        .to_string();
     TERMINAL
         .lock()
         .await
@@ -98,18 +107,21 @@ pub async fn render_tui() {
             }
             // SETTINGS
             {
-                let items: Vec<ListItem> = state
-                    .logs
-                    .iter()
-                    .rev()
-                    .map(|s| ListItem::new(s.clone()))
-                    .collect();
-                let list = List::new(items).block(
+                settings_panel::draw(
+                    f,
+                    chunks[1],
                     Block::default()
                         .title("Settings")
                         .borders(Borders::LEFT.union(Borders::TOP).union(Borders::BOTTOM)),
+                    password,
+                    state.clone(),
                 );
-                f.render_widget(list, chunks[1]);
+                draw_block_joins(
+                    f,
+                    chunks[1],
+                    Borders::TOP.union(Borders::LEFT).union(Borders::BOTTOM),
+                    Borders::LEFT,
+                );
             }
             // GRAPHS
             {
@@ -129,21 +141,43 @@ pub async fn render_tui() {
                     stack[0],
                     "CPU".to_string(),
                     state.with_width(38).cpu,
+                    Borders::TOP.union(Borders::LEFT).union(Borders::RIGHT),
                     Color::Cyan,
+                );
+                draw_block_joins(
+                    f,
+                    stack[0],
+                    Borders::TOP.union(Borders::LEFT),
+                    Borders::LEFT,
                 );
                 render_graphs(
                     f,
                     stack[1],
                     "RAM".to_string(),
                     state.with_width(38).ram,
+                    Borders::TOP.union(Borders::LEFT).union(Borders::RIGHT),
                     Color::Green,
+                );
+                draw_block_joins(
+                    f,
+                    stack[1],
+                    Borders::TOP.union(Borders::LEFT).union(Borders::RIGHT),
+                    Borders::TOP,
                 );
                 render_graphs(
                     f,
                     stack[2],
                     "PING".to_string(),
                     state.with_width(38).ping,
+                    Borders::ALL,
                     Color::Magenta,
+                );
+                draw_block_joins(f, stack[2], Borders::ALL, Borders::TOP);
+                draw_block_joins(
+                    f,
+                    stack[2],
+                    Borders::BOTTOM.union(Borders::LEFT),
+                    Borders::LEFT,
                 );
             }
         })
@@ -156,6 +190,7 @@ pub fn render_graphs(
     area: Rect,
     title: String,
     graph: Vec<(f64, f64)>,
+    borders: Borders,
     color: Color,
 ) {
     let min_x = graph.first().map(|(x, _)| *x).unwrap_or(0.0);
@@ -169,13 +204,13 @@ pub fn render_graphs(
     let max_y = graph.iter().map(|(_, y)| *y).fold(f64::MIN, f64::max);
     let block = Block::default()
         .title(format!(
-            "{}: {}, {}/{}  MIN/MAX ",
+            "{}: {}──{}/{} MIN/MAX ",
             title,
             graph.last().unwrap_or(&(0.0 as f64, 0.0 as f64)).1 as i64,
             min_y as i64,
             max_y as i64
         ))
-        .borders(Borders::ALL);
+        .borders(borders);
     let canvas = Canvas::default()
         .block(block)
         .x_bounds([min_x, max_x])

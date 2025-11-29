@@ -35,7 +35,7 @@ pub fn create_languages() -> Result<(), JsonError> {
     general_texts.insert("setup_completed", "Launched")?;
     general_texts.insert(
         "community_active",
-        "Communities active on ws://0.0.0.0:{}/community/...",
+        "Communities active on ws://{}:{}/community/...",
     )?;
     general_texts.insert(
         "community_start_error",

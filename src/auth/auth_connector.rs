@@ -142,7 +142,7 @@ pub async fn migrate_user(user_profile: &mut UserProfile) -> bool {
     let client = client();
 
     let mut payload = JsonValue::new_object();
-    payload["iota_id"] = JsonValue::String(CONFIG.lock().await.get_iota_id().to_string());
+    payload["iota_id"] = JsonValue::String(CONFIG.read().await.get_iota_id().to_string());
     payload["reset_token"] = user_profile.reset_token.clone().into();
     payload["new_token"] = user_profile.randomize_reset_token().into();
 

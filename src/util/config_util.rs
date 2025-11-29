@@ -1,10 +1,10 @@
 use crate::util::file_util::{load_file, save_file};
 use json::JsonValue;
 use once_cell::sync::Lazy;
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 use uuid::Uuid;
 
-pub static CONFIG: Lazy<Mutex<ConfigUtil>> = Lazy::new(|| Mutex::new(ConfigUtil::new()));
+pub static CONFIG: Lazy<RwLock<ConfigUtil>> = Lazy::new(|| RwLock::new(ConfigUtil::new()));
 
 pub struct ConfigUtil {
     pub config: JsonValue,
@@ -38,7 +38,11 @@ impl ConfigUtil {
         self.config["port"].as_u16().unwrap_or(1984)
     }
 
-    pub fn change(&mut self, key: &str, value: Uuid) {
+    pub fn get(&self, key: &str) -> &JsonValue {
+        &self.config[key]
+    }
+
+    pub fn change(&mut self, key: &str, value: &str) {
         self.config[key] = JsonValue::String(value.to_string());
         self.unique = true;
     }

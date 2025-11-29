@@ -17,6 +17,7 @@ use hyper::{
 };
 use hyper_util::rt::tokio::TokioIo;
 use hyper_util::service::TowerToHyperService;
+use pnet::datalink::NetworkInterface;
 use rustls::ServerConfig;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use sha1::{Digest, Sha1};
@@ -221,6 +222,15 @@ fn is_local_network(addr: IpAddr) -> bool {
 }
 
 async fn run_http_server(port: u16) -> bool {
+    let mut ip = "0.0.0.0".to_string();
+    for iface in pnet::datalink::interfaces() {
+        let iface: NetworkInterface = iface;
+        let ipsv = format!("{}", iface.ips[0]);
+        let ips: &str = ipsv.split('/').next().unwrap();
+        if format!("{}", ips).starts_with("10.") || format!("{}", ips).starts_with("192.") {
+            ip = ips.to_string();
+        }
+    }
     let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).await;
     if let Err(e) = listener {
         log_message(format!("Failed to bind to port {}: {:?}", port, e));
@@ -228,8 +238,8 @@ async fn run_http_server(port: u16) -> bool {
     }
     let listener = listener.unwrap();
     log_message(format!(
-        "Standard Server listening for HTTP and WS on 0.0.0.0:{}",
-        port
+        "Standard Server listening for HTTP and WS on {}:{}",
+        ip, port
     ));
 
     tokio::spawn(async move {
@@ -276,6 +286,17 @@ async fn run_http_server(port: u16) -> bool {
 
 /// Runs the encrypted HTTPS/WSS server loop using the provided TLS config.
 async fn run_tls_server(port: u16, tls_config: Arc<ServerConfig>) -> bool {
+    let mut ip = "0.0.0.0".to_string();
+    for iface in pnet::datalink::interfaces() {
+        let iface: NetworkInterface = iface;
+        let ipsv = format!("{}", iface.ips[0]);
+        let ips: &str = ipsv.split('/').next().unwrap();
+        log_message(ips);
+        if format!("{}", ips).starts_with("10.") {
+            ip = ips.to_string();
+        }
+    }
+
     let acceptor = TlsAcceptor::from(tls_config);
 
     let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).await;
@@ -285,8 +306,8 @@ async fn run_tls_server(port: u16, tls_config: Arc<ServerConfig>) -> bool {
     }
     let listener = listener.unwrap();
     log_message(format!(
-        "Encrypted Server listening for HTTPS and WSS on 0.0.0.0:{}",
-        port
+        "Encrypted Server listening for HTTPS and WSS on {}:{}",
+        ip, port
     ));
 
     tokio::spawn(async move {
@@ -348,17 +369,10 @@ pub async fn start(port: u16) -> bool {
     let tls_result = load_tls_config();
 
     match tls_result {
-        Ok(Some(tls_config)) => {
-            // Certificates found and config loaded successfully, run the TLS server
-            run_tls_server(port, tls_config).await
-        }
-        Ok(None) => {
-            // Certificates not found, run the standard HTTP server
-            run_http_server(port).await
-        }
+        Ok(Some(tls_config)) => run_tls_server(port, tls_config).await,
+        Ok(None) => run_http_server(port).await,
         Err(e) => {
             log_message(format!("Fatal error during TLS config load: {}", e));
-            // Error, server cannot start
             false
         }
     }
