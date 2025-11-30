@@ -202,23 +202,8 @@ impl Service<HttpRequest<Incoming>> for HttpService {
 }
 
 fn is_local_network(addr: IpAddr) -> bool {
-    if addr.is_loopback() {
-        return true;
-    }
-
-    if let IpAddr::V4(ipv4) = addr {
-        if ipv4.octets()[0] == 169 && ipv4.octets()[1] == 254 {
-            return true;
-        }
-    }
-
-    if let IpAddr::V6(ipv6) = addr {
-        if (ipv6.segments()[0] & 0xfe00) == 0xfc00 {
-            return true;
-        }
-    }
-
-    false
+    //  PLACEHOLDER
+    return true;
 }
 
 async fn run_http_server(port: u16) -> bool {

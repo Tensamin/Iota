@@ -1,4 +1,3 @@
-use crate::SHUTDOWN;
 use crate::auth::local_auth;
 use crate::data::communication::{CommunicationType, CommunicationValue, DataTypes};
 use crate::gui::log_panel::{log_cv, log_message, log_message_trans};
@@ -8,6 +7,7 @@ use crate::users::user_community_util::UserCommunityUtil;
 use crate::util::chat_files;
 use crate::util::chats_util::{get_user, get_users, mod_user};
 use crate::util::file_util::{get_children, load_file, save_file};
+use crate::{RECONNECT, SHUTDOWN};
 use futures::Stream;
 use futures::stream::{SplitSink, SplitStream};
 use futures_util::sink::Sink;
@@ -91,6 +91,9 @@ impl OmikronConnection {
             if *SHUTDOWN.read().await {
                 break;
             }
+            if *RECONNECT.read().await {
+                break;
+            }
             match connect_async("wss://app.tensamin.net/ws/iota/").await {
                 Ok((ws_stream, _)) => {
                     let (write_half, read_half) = ws_stream.split();
@@ -103,6 +106,9 @@ impl OmikronConnection {
                     let handle = tokio::spawn(async move {
                         loop {
                             if *SHUTDOWN.read().await {
+                                break;
+                            }
+                            if *RECONNECT.read().await {
                                 break;
                             }
                             cloned_self.send_ping().await;
@@ -147,6 +153,9 @@ impl OmikronConnection {
         tokio::spawn(async move {
             while let Some(msg) = read_half.next().await {
                 if *SHUTDOWN.read().await {
+                    break;
+                }
+                if *RECONNECT.read().await {
                     break;
                 }
                 let waiting = waiting_out.clone();

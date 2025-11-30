@@ -1,4 +1,6 @@
+use crate::RECONNECT;
 use crate::auth::{auth_connector, crypto_helper};
+use crate::gui::log_panel::log_message;
 use crate::users::user_profile::UserProfile;
 use crate::util::config_util::CONFIG;
 use crate::util::file_util::{load_file, save_file};
@@ -71,6 +73,8 @@ pub async fn create_user(username: &str) -> (Option<UserProfile>, Option<String>
     );
 
     auth_connector::complete_register(&up, &CONFIG.read().await.get_iota_id().to_string()).await;
+    *RECONNECT.write().await = true;
+    log_message("Created User");
     save_file(
         "",
         &format!("{}.tu", username),

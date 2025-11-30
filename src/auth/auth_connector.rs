@@ -127,9 +127,7 @@ pub async fn complete_register(user_profile: &UserProfile, iota_id: &str) -> boo
         .await
         .unwrap();
 
-    println!("Status: {}", res.status());
     let body = res.text().await.unwrap();
-    println!("Response body:\n{}", body);
 
     CommunicationValue::from_json(&body).is_type(CommunicationType::success)
 }
