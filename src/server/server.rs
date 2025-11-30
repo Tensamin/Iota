@@ -225,10 +225,12 @@ async fn run_http_server(port: u16) -> bool {
     let mut ip = "0.0.0.0".to_string();
     for iface in pnet::datalink::interfaces() {
         let iface: NetworkInterface = iface;
-        let ipsv = format!("{}", iface.ips[0]);
-        let ips: &str = ipsv.split('/').next().unwrap();
-        if format!("{}", ips).starts_with("10.") || format!("{}", ips).starts_with("192.") {
-            ip = ips.to_string();
+        if iface.ips.len() > 0 {
+            let ipsv = format!("{}", iface.ips[0]);
+            let ips: &str = ipsv.split('/').next().unwrap();
+            if format!("{}", ips).starts_with("10.") || format!("{}", ips).starts_with("192.") {
+                ip = ips.to_string();
+            }
         }
     }
     let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).await;
