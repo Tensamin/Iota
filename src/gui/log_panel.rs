@@ -1,3 +1,4 @@
+use crate::ACTIVE_TASKS;
 use crate::APP_STATE;
 use crate::SHUTDOWN;
 use crate::gui::tui::UNIQUE;
@@ -36,6 +37,9 @@ pub fn log_message(msg: impl Into<String>) {
 pub fn setup() {
     // Start a background thread to sample metrics
     tokio::spawn(async move {
+        {
+            ACTIVE_TASKS.lock().unwrap().push("metrics".to_string());
+        }
         let mut sys = System::new_with_specifics(RefreshKind::new());
         let mut last_total_received = 0u64;
         let mut last_total_transmitted = 0u64;
@@ -85,6 +89,12 @@ pub fn setup() {
             counter += 1.0;
             *UNIQUE.write().await = true;
             thread::sleep(Duration::from_millis(1000));
+        }
+        {
+            ACTIVE_TASKS
+                .lock()
+                .unwrap()
+                .retain(|t| !t.eq(&"metrics".to_string()));
         }
     });
 }

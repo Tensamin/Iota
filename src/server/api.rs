@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
-use crate::SHUTDOWN;
 use crate::auth::auth_connector::unregister_user;
 use crate::communities::community::Community;
 use crate::data::communication::{CommunicationType, CommunicationValue, DataTypes};
 use crate::gui::log_panel::log_message;
+use crate::util::file_util::delete_file;
+use crate::{RELOAD, SHUTDOWN};
 use axum::http::HeaderValue;
 use http_body_util::Full;
 use hyper::body::Bytes;
@@ -48,6 +49,15 @@ pub async fn handle(
                     "{\"type\":\"success\"}".to_string(),
                 )
             }
+            "reload" => {
+                *SHUTDOWN.write().await = true;
+                *RELOAD.write().await = true;
+                (
+                    StatusCode::OK,
+                    "application/json",
+                    "{\"type\":\"success\"}".to_string(),
+                )
+            }
             "app_state" => (StatusCode::OK, "application/json", {
                 let with = headers
                     .get("size")
@@ -82,6 +92,18 @@ pub async fn handle(
                                 }
                             }
                         }
+                        "remove_tu" => {
+                            if body.is_none() {
+                                "{\"type\":\"error\"}".to_string()
+                            } else {
+                                let username =
+                                    body.unwrap()["username"].as_str().unwrap().to_string();
+
+                                delete_file("", &format!("{}.tu", username));
+
+                                "{\"type\":\"success\"}".to_string()
+                            }
+                        }
                         "remove" => {
                             if body.is_none() {
                                 "{\"type\":\"error\"}".to_string()
@@ -94,6 +116,7 @@ pub async fn handle(
                                 )
                                 .await;
                                 user_manager::remove_user(uuid);
+                                user_manager::save_users();
                                 "{}".to_string()
                             }
                         }

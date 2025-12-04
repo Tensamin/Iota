@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::{
-    APP_STATE, SHUTDOWN,
+    ACTIVE_TASKS, APP_STATE, SHUTDOWN,
     gui::{settings_panel, widgets::betterblock::draw_block_joins},
     util::config_util::CONFIG,
 };
@@ -48,6 +48,10 @@ pub static TERMINAL: Lazy<Arc<Mutex<Terminal<CrosstermBackend<Stdout>>>>> = Lazy
 pub fn start_tui() {
     tokio::spawn(async move {
         init_terminal();
+
+        {
+            ACTIVE_TASKS.lock().unwrap().push("UI".to_string());
+        }
         loop {
             if *SHUTDOWN.read().await {
                 break;
@@ -57,6 +61,12 @@ pub fn start_tui() {
             } else {
                 thread::sleep(Duration::from_millis(50));
             }
+        }
+        {
+            ACTIVE_TASKS
+                .lock()
+                .unwrap()
+                .retain(|t| !t.eq(&"UI".to_string()));
         }
     });
 }

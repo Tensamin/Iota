@@ -1,8 +1,8 @@
-use crate::SHUTDOWN;
 use crate::gui::log_panel::log_message;
 use crate::server::api;
 use crate::server::socket::handle;
 use crate::util::file_util::{load_file_buf, load_file_vec};
+use crate::{ACTIVE_TASKS, SHUTDOWN};
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
@@ -29,6 +29,7 @@ use std::result::Result::Ok;
 use std::sync::Arc;
 use std::{future::Future, pin::Pin, time::Duration};
 use tokio::net::TcpListener;
+use tokio::sync::broadcast; // Import broadcast for the kill switch
 use tokio_rustls::TlsAcceptor;
 use tokio_tungstenite::WebSocketStream;
 use tower::Service;
@@ -201,7 +202,7 @@ impl Service<HttpRequest<Incoming>> for HttpService {
     }
 }
 
-fn is_local_network(addr: IpAddr) -> bool {
+fn is_local_network(_addr: IpAddr) -> bool {
     //  PLACEHOLDER
     return true;
 }
@@ -229,45 +230,81 @@ async fn run_http_server(port: u16) -> bool {
         ip, port
     ));
 
+    // Create a broadcast channel for graceful shutdown signal
+    let (shutdown_tx, _) = broadcast::channel::<()>(1);
+
+    ACTIVE_TASKS.lock().unwrap().push("WebServer".to_string());
+
     tokio::spawn(async move {
         loop {
-            if *SHUTDOWN.read().await {
-                break;
-            }
-            match listener.accept().await {
-                std::result::Result::Ok((stream, addr)) => {
-                    let service = HttpService { peer_addr: addr };
-                    let io = TokioIo::new(stream);
-
-                    tokio::spawn(async move {
-                        if let Err(err) = http1::Builder::new()
-                            .preserve_header_case(true)
-                            .title_case_headers(true)
-                            .serve_connection(io, TowerToHyperService::new(service))
-                            .with_upgrades()
-                            .await
-                        {
-                            if let Some(io_err) =
-                                err.source().and_then(|e| e.downcast_ref::<io::Error>())
-                            {
-                                if io_err.kind() != io::ErrorKind::ConnectionReset
-                                    && io_err.kind() != io::ErrorKind::BrokenPipe
-                                {
-                                    log_message(format!("Error serving connection: {:?}", err));
-                                }
-                            } else {
-                                log_message(format!("Error serving connection: {:?}", err));
-                            }
-                        }
-                    });
+            tokio::select! {
+                // Monitor for shutdown signal
+                _ = async {
+                    loop {
+                        if *SHUTDOWN.read().await { return; }
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                    }
+                } => {
+                    log_message("Standard Server received shutdown signal.");
+                    // Send kill signal to all active connection tasks
+                    let _ = shutdown_tx.send(());
+                    break;
                 }
-                Err(e) => {
-                    log_message(format!("Error accepting connection: {:?}", e));
-                    tokio::time::sleep(Duration::from_millis(500)).await;
+
+                // Accept new connections
+                accepted = listener.accept() => {
+                    match accepted {
+                        std::result::Result::Ok((stream, addr)) => {
+                            let service = HttpService { peer_addr: addr };
+                            let io = TokioIo::new(stream);
+
+                            // Subscribe to the shutdown signal for this specific connection
+                            let mut rx = shutdown_tx.subscribe();
+
+                            tokio::spawn(async move {
+                                // Prepare the connection future
+                                let conn = http1::Builder::new()
+                                    .preserve_header_case(true)
+                                    .title_case_headers(true)
+                                    .serve_connection(io, TowerToHyperService::new(service))
+                                    .with_upgrades();
+
+                                // Wait for either the connection to finish naturally OR the shutdown signal
+                                tokio::select! {
+                                    res = conn => {
+                                        if let Err(err) = res {
+                                            if let Some(io_err) = err.source().and_then(|e| e.downcast_ref::<io::Error>()) {
+                                                if io_err.kind() != io::ErrorKind::ConnectionReset
+                                                   && io_err.kind() != io::ErrorKind::BrokenPipe
+                                                {
+                                                    log_message(format!("Error serving connection: {:?}", err));
+                                                }
+                                            }
+                                        }
+                                    }
+                                    _ = rx.recv() => {
+                                        // Shutdown signal received.
+                                        // Dropping the 'conn' future here closes the socket immediately.
+                                    }
+                                }
+                            });
+                        }
+                        Err(e) => {
+                            log_message(format!("Error accepting connection: {:?}", e));
+                            tokio::time::sleep(Duration::from_millis(500)).await;
+                        }
+                    }
                 }
             }
         }
+
+        ACTIVE_TASKS
+            .lock()
+            .unwrap()
+            .retain(|t| !t.eq(&"WebServer".to_string()));
+        log_message("Standard Server shutdown complete.");
     });
+
     true
 }
 
@@ -297,57 +334,91 @@ async fn run_tls_server(port: u16, tls_config: Arc<ServerConfig>) -> bool {
         ip, port
     ));
 
+    // Create a broadcast channel for graceful shutdown signal
+    let (shutdown_tx, _) = broadcast::channel::<()>(1);
+
+    ACTIVE_TASKS.lock().unwrap().push("WebServer".to_string());
+
     tokio::spawn(async move {
         loop {
-            if *SHUTDOWN.read().await {
-                break;
-            }
-            match listener.accept().await {
-                std::result::Result::Ok((stream, addr)) => {
-                    let service = HttpService { peer_addr: addr };
-                    let acceptor = acceptor.clone();
-
-                    tokio::spawn(async move {
-                        // Perform TLS handshake
-                        let tls_stream = match acceptor.accept(stream).await {
-                            Ok(s) => s,
-                            Err(e) => {
-                                // Ignore non-TLS clients connecting to the TLS port
-                                if e.kind() != io::ErrorKind::Interrupted {
-                                    log_message(format!("TLS Handshake error: {:?}", e));
-                                }
-                                return;
-                            }
-                        };
-                        let io = TokioIo::new(tls_stream);
-
-                        if let Err(err) = http1::Builder::new()
-                            .preserve_header_case(true)
-                            .title_case_headers(true)
-                            .serve_connection(io, TowerToHyperService::new(service))
-                            .with_upgrades()
-                            .await
-                        {
-                            if let Some(io_err) =
-                                err.source().and_then(|e| e.downcast_ref::<io::Error>())
-                            {
-                                if io_err.kind() != io::ErrorKind::ConnectionReset
-                                    && io_err.kind() != io::ErrorKind::BrokenPipe
-                                {
-                                    log_message(format!("Error serving connection: {:?}", err));
-                                }
-                            } else {
-                                log_message(format!("Error serving connection: {:?}", err));
-                            }
-                        }
-                    });
+            tokio::select! {
+                // Monitor for shutdown signal
+                _ = async {
+                    loop {
+                        if *SHUTDOWN.read().await { return; }
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                    }
+                } => {
+                    log_message("Encrypted Server received shutdown signal.");
+                    // Send kill signal to all active connection tasks
+                    let _ = shutdown_tx.send(());
+                    break;
                 }
-                Err(e) => {
-                    log_message(format!("Error accepting connection: {:?}", e));
-                    tokio::time::sleep(Duration::from_millis(500)).await;
+
+                // Accept new connections
+                accepted = listener.accept() => {
+                    match accepted {
+                        std::result::Result::Ok((stream, addr)) => {
+                            let service = HttpService { peer_addr: addr };
+                            let acceptor = acceptor.clone();
+
+                            // Subscribe to the shutdown signal for this specific connection
+                            let mut rx = shutdown_tx.subscribe();
+
+                            tokio::spawn(async move {
+                                // Perform TLS handshake
+                                let tls_stream = match acceptor.accept(stream).await {
+                                    Ok(s) => s,
+                                    Err(e) => {
+                                        if e.kind() != io::ErrorKind::Interrupted {
+                                            log_message(format!("TLS Handshake error: {:?}", e));
+                                        }
+                                        return;
+                                    }
+                                };
+                                let io = TokioIo::new(tls_stream);
+
+                                // Prepare connection future
+                                let conn = http1::Builder::new()
+                                    .preserve_header_case(true)
+                                    .title_case_headers(true)
+                                    .serve_connection(io, TowerToHyperService::new(service))
+                                    .with_upgrades();
+
+                                // Wait for either the connection to finish naturally OR the shutdown signal
+                                tokio::select! {
+                                    res = conn => {
+                                        if let Err(err) = res {
+                                            if let Some(io_err) = err.source().and_then(|e| e.downcast_ref::<io::Error>()) {
+                                                if io_err.kind() != io::ErrorKind::ConnectionReset
+                                                   && io_err.kind() != io::ErrorKind::BrokenPipe
+                                                {
+                                                    log_message(format!("Error serving connection: {:?}", err));
+                                                }
+                                            }
+                                        }
+                                    }
+                                    _ = rx.recv() => {
+                                        // Shutdown signal received.
+                                        // Dropping the 'conn' future here closes the socket immediately.
+                                    }
+                                }
+                            });
+                        }
+                        Err(e) => {
+                            log_message(format!("Error accepting connection: {:?}", e));
+                            tokio::time::sleep(Duration::from_millis(500)).await;
+                        }
+                    }
                 }
             }
         }
+
+        ACTIVE_TASKS
+            .lock()
+            .unwrap()
+            .retain(|t| !t.eq(&"WebServer".to_string()));
+        log_message("Encrypted Server shutdown complete.");
     });
     true
 }

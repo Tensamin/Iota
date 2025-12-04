@@ -18,7 +18,9 @@ impl ConfigUtil {
             unique: false,
         }
     }
-
+    pub fn clear(&mut self) {
+        self.config = JsonValue::new_object();
+    }
     pub fn load(&mut self) {
         let s = load_file("", "config.json");
         if !s.is_empty() {

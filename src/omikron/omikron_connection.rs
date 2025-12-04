@@ -1,13 +1,12 @@
 use crate::auth::local_auth;
 use crate::data::communication::{CommunicationType, CommunicationValue, DataTypes};
 use crate::gui::log_panel::{log_cv, log_message, log_message_trans};
-use crate::langu::language_manager::format;
 use crate::users::contact::Contact;
 use crate::users::user_community_util::UserCommunityUtil;
 use crate::util::chat_files;
 use crate::util::chats_util::{get_user, get_users, mod_user};
 use crate::util::file_util::{get_children, load_file, save_file};
-use crate::{RECONNECT, SHUTDOWN};
+use crate::{ACTIVE_TASKS, RECONNECT, SHUTDOWN};
 use futures::Stream;
 use futures::stream::{SplitSink, SplitStream};
 use futures_util::sink::Sink;
@@ -103,6 +102,10 @@ impl OmikronConnection {
                     > = Box::new(read_half);
                     self.clone().spawn_listener(boxed_reader).await;
                     let cloned_self = self.clone();
+
+                    {
+                        ACTIVE_TASKS.lock().unwrap().push("PingPong".to_string());
+                    }
                     let handle = tokio::spawn(async move {
                         loop {
                             if *SHUTDOWN.read().await {
@@ -115,13 +118,18 @@ impl OmikronConnection {
                             sleep(Duration::from_secs(1)).await;
                         }
                     });
+                    {
+                        ACTIVE_TASKS
+                            .lock()
+                            .unwrap()
+                            .retain(|t| !t.eq(&"PingPong".to_string()));
+                    }
 
                     *self.is_connected.lock().await = true;
                     *self.pingpong.lock().await = Some(handle);
                     break;
                 }
-                Err(e) => {
-                    log_message(format("connection_failed", &[&e.to_string().as_str()]));
+                Err(_) => {
                     *self.is_connected.lock().await = false;
                     sleep(Duration::from_secs(2)).await;
                 }
@@ -150,6 +158,10 @@ impl OmikronConnection {
         let sel_out = self.clone();
         let variant = self.variant.clone();
         let sel_arc_out = self.clone();
+
+        {
+            ACTIVE_TASKS.lock().unwrap().push("Listener".to_string());
+        }
         tokio::spawn(async move {
             while let Some(msg) = read_half.next().await {
                 if *SHUTDOWN.read().await {
@@ -568,6 +580,12 @@ impl OmikronConnection {
                 });
             }
         });
+        {
+            ACTIVE_TASKS
+                .lock()
+                .unwrap()
+                .retain(|t| !t.eq(&"Listener".to_string()));
+        }
     }
     pub async fn send_message_static(
         writer: &Arc<

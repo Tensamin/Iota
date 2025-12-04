@@ -82,7 +82,7 @@ pub async fn create_user(username: &str) -> (Option<UserProfile>, Option<String>
     );
 
     USERS.lock().unwrap().push(up.clone());
-    save_users().ok();
+    save_users();
     (Some(up), Some(STANDARD.encode(&private_key.as_bytes())))
 }
 
@@ -105,14 +105,19 @@ pub fn remove_user(user_id: Uuid) {
     *UNIQUE.lock().unwrap() = true;
 }
 
-pub fn save_users() -> io::Result<()> {
+pub fn save_users() {
     *UNIQUE.lock().unwrap() = false;
     let users = USERS.lock().unwrap();
     let arr: Vec<JsonValue> = users.iter().map(|u| u.to_json()).collect();
     let json_str = JsonValue::Array(arr).dump();
 
     save_file("", "users.json", &json_str);
-    Ok(())
+}
+
+pub fn clear() {
+    let mut users = USERS.lock().unwrap();
+    users.clear();
+    *UNIQUE.lock().unwrap() = true;
 }
 
 pub async fn load_users() -> io::Result<()> {
@@ -132,7 +137,7 @@ pub async fn load_users() -> io::Result<()> {
         }
     }
     if *UNIQUE.lock().unwrap() {
-        save_users().ok();
+        save_users();
     }
     Ok(())
 }

@@ -18,6 +18,9 @@ pub async fn add_community(community: Arc<Community>) {
 pub async fn remove_community(name: &str) {
     COMMUNITY_REGISTRY.lock().await.remove(name);
 }
+pub async fn clear() {
+    COMMUNITY_REGISTRY.lock().await.clear();
+}
 pub async fn get_community(name: &str) -> Option<Arc<Community>> {
     if let Some(c) = COMMUNITY_REGISTRY.lock().await.get(name) {
         Some(c.clone())

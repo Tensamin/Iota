@@ -1,4 +1,5 @@
-use json::{self, JsonValue::String};
+use json::JsonValue;
+use json::{self};
 use once_cell::sync::Lazy;
 use pnet::datalink::NetworkInterface;
 use std::sync::Arc;
@@ -40,140 +41,159 @@ pub static APP_STATE: LazyLock<Arc<Mutex<AppState>>> =
     LazyLock::new(|| Arc::new(Mutex::new(AppState::new())));
 
 pub static SHUTDOWN: Lazy<RwLock<bool>> = Lazy::new(|| RwLock::new(false));
+pub static RELOAD: Lazy<RwLock<bool>> = Lazy::new(|| RwLock::new(true));
+pub static ACTIVE_TASKS: Lazy<Mutex<Vec<String>>> = Lazy::new(|| Mutex::new(Vec::new()));
 pub static RECONNECT: Lazy<RwLock<bool>> = Lazy::new(|| RwLock::new(false));
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 8)]
 #[allow(unused_must_use, dead_code)]
 async fn main() {
-    // EULA
-    //if !eula_checker::check_eula() {
-    //    println!("Please accept the end user license agreement before launching!");
-    //    return;
-    //}
+    while *RELOAD.read().await {
+        *RELOAD.write().await = false;
+        *SHUTDOWN.write().await = false;
 
-    // LANGUAGE PACK
-    if let Err(e) = language_creator::create_languages() {
-        println!("Language pack creation failed: {}", e);
-        return;
-    }
+        // EULA
+        //if !eula_checker::check_eula() {
+        //    println!("Please accept the end user license agreement before launching!");
+        //    return;
+        //}
 
-    // UI
-    log_panel::setup();
-    tui::start_tui();
-    input_handler::setup_input_handler();
+        // LANGUAGE PACK
+        if let Err(e) = language_creator::create_languages() {
+            println!("Language pack creation failed: {}", e);
+            return;
+        }
 
-    // BASIC CONFIGURATION
-    &CONFIG.write().await.load();
-    if !CONFIG.read().await.config.has_key("iota_id") {
-        CONFIG
-            .write()
-            .await
-            .change("iota_id", &Uuid::new_v4().to_string());
-        CONFIG.write().await.update();
-    }
+        // UI
+        log_panel::setup();
+        tui::start_tui();
+        input_handler::setup_input_handler();
 
-    // USER MANAGEMENT
-    if let Err(_) = user_manager::load_users().await {
-        log_message_trans("user_load_failed");
-    }
+        // BASIC CONFIGURATION
+        &CONFIG.write().await.load();
+        if !CONFIG.read().await.config.has_key("iota_id") {
+            CONFIG
+                .write()
+                .await
+                .change("iota_id", &Uuid::new_v4().to_string());
+            CONFIG.write().await.update();
+        }
 
-    let mut sb = "".to_string();
+        // USER MANAGEMENT
+        if let Err(_) = user_manager::load_users().await {
+            log_message_trans("user_load_failed");
+        }
 
-    for up in user_manager::get_users() {
-        sb = sb + "," + &up.user_id.to_string().as_str();
-    }
+        let mut sb = "".to_string();
 
-    if !sb.is_empty() {
-        {}
-        sb.remove(0);
-        sb = sb + ",";
-    }
-    log_message(format!(
-        "IOTA ID:  {}-####-####-####-############",
-        CONFIG
-            .read()
-            .await
-            .get_iota_id()
-            .to_string()
-            .split("-")
-            .next()
-            .unwrap()
-    ));
-    log_message(format!("User IDS: {}", sb));
+        for up in user_manager::get_users() {
+            sb = sb + "," + &up.user_id.to_string().as_str();
+        }
 
-    // COMMUNITY MANAGEMENT
-    registry::load_interactables().await;
-    community_manager::load_communities().await;
-    community_manager::save_communities().await;
-    let mut sb1 = "".to_string();
-    for cp in community_manager::get_communities().await {
-        sb1 = sb1 + "," + &cp.get_name().to_string().as_str();
-    }
+        if !sb.is_empty() {
+            {}
+            sb.remove(0);
+            sb = sb + ",";
+        }
+        log_message(format!(
+            "IOTA ID:  {}-####-####-####-############",
+            CONFIG
+                .read()
+                .await
+                .get_iota_id()
+                .to_string()
+                .split("-")
+                .next()
+                .unwrap()
+        ));
+        log_message(format!("User IDS: {}", sb));
 
-    if !sb1.is_empty() {
-        sb1.remove(0);
-        sb1 = sb1 + ",";
-    }
-    log_message(format!("Community IDS: {}", sb1));
-    let port = CONFIG.read().await.get_port();
-    let mut ip = "0.0.0.0".to_string();
-    for iface in pnet::datalink::interfaces() {
-        let iface: NetworkInterface = iface;
-        if iface.ips.len() > 0 {
-            let ipsv = format!("{}", iface.ips[0]);
-            let ips: &str = ipsv.split('/').next().unwrap();
-            if format!("{}", ips).starts_with("10.") || format!("{}", ips).starts_with("192.") {
-                ip = ips.to_string();
+        // COMMUNITY MANAGEMENT
+        registry::load_interactables().await;
+        community_manager::load_communities().await;
+        community_manager::save_communities().await;
+        let mut sb1 = "".to_string();
+        for cp in community_manager::get_communities().await {
+            sb1 = sb1 + "," + &cp.get_name().to_string().as_str();
+        }
+
+        if !sb1.is_empty() {
+            sb1.remove(0);
+            sb1 = sb1 + ",";
+        }
+        log_message(format!("Community IDS: {}", sb1));
+        let port = CONFIG.read().await.get_port();
+        let mut ip = "0.0.0.0".to_string();
+        for iface in pnet::datalink::interfaces() {
+            let iface: NetworkInterface = iface;
+            if iface.ips.len() > 0 {
+                let ipsv = format!("{}", iface.ips[0]);
+                let ips: &str = ipsv.split('/').next().unwrap();
+                if format!("{}", ips).starts_with("10.") || format!("{}", ips).starts_with("192.") {
+                    ip = ips.to_string();
+                }
             }
         }
-    }
-    if start(port).await {
-        log_message(format("community_active", &[&ip, &port.to_string()]));
-    } else {
-        if port < 1024 {
-            log_message(format("community_start_error_admin", &[&port.to_string()]));
+        if start(port).await {
+            log_message(format("community_active", &[&ip, &port.to_string()]));
         } else {
-            log_message(format("community_start_error", &[&port.to_string()]));
+            if port < 1024 {
+                log_message(format("community_start_error_admin", &[&port.to_string()]));
+            } else {
+                log_message(format("community_start_error", &[&port.to_string()]));
+            }
         }
-    }
-    if !has_dir("web") {
-        /*download_and_extract_zip(
-            "weblink",
-            "web",
-        )
-        .await;*/
-    }
-    loop {
-        if *SHUTDOWN.read().await {
-            break;
-        }
-        let omikron: Arc<OmikronConnection> = Arc::new(OmikronConnection::new());
-        omikron.connect().await;
-        omikron
-            .send_message(
-                CommunicationValue::new(CommunicationType::identification)
-                    .add_data(DataTypes::user_ids, String(sb.to_string()))
-                    .add_data(
-                        DataTypes::iota_id,
-                        String(CONFIG.read().await.get_iota_id().to_string()),
-                    )
-                    .to_json()
-                    .to_string()
-                    .as_mut()
-                    .to_string(),
+        if !has_dir("web") {
+            /*download_and_extract_zip(
+                "weblink",
+                "web",
             )
-            .await;
-        let mut omikron_connection = OMIKRON_CONNECTION.write().await;
-        *omikron_connection = Some(omikron.clone());
-        log_message_trans("setup_completed");
+            .await;*/
+        }
         loop {
             if *SHUTDOWN.read().await {
                 break;
             }
-            if !omikron.is_connected().await {
-                break;
+            let omikron: Arc<OmikronConnection> = Arc::new(OmikronConnection::new());
+            omikron.connect().await;
+            omikron
+                .send_message(
+                    CommunicationValue::new(CommunicationType::identification)
+                        .add_data(DataTypes::user_ids, JsonValue::String(sb.to_string()))
+                        .add_data(
+                            DataTypes::iota_id,
+                            JsonValue::String(CONFIG.read().await.get_iota_id().to_string()),
+                        )
+                        .to_json()
+                        .to_string()
+                        .as_mut()
+                        .to_string(),
+                )
+                .await;
+            let mut omikron_connection = OMIKRON_CONNECTION.write().await;
+            *omikron_connection = Some(omikron.clone());
+            log_message_trans("setup_completed");
+            loop {
+                if *SHUTDOWN.read().await {
+                    break;
+                }
+                if !omikron.is_connected().await {
+                    break;
+                }
+                sleep(Duration::from_secs(1)).await;
             }
-            sleep(Duration::from_secs(1)).await;
+        }
+        if *RELOAD.read().await {
+            loop {
+                if ACTIVE_TASKS.lock().unwrap().is_empty() {
+                    break;
+                }
+                sleep(Duration::from_secs(1)).await;
+            }
+            &CONFIG.write().await.clear();
+            user_manager::clear();
+            community_manager::clear();
+            *APP_STATE.lock().unwrap() = AppState::new();
         }
     }
 }
