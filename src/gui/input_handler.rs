@@ -1,6 +1,6 @@
 use crate::{ACTIVE_TASKS, RELOAD, SHUTDOWN, gui::tui::UNIQUE, util::config_util::CONFIG};
+use crossterm::event::{Event, KeyCode, read};
 use crossterm::event::{KeyEvent, KeyModifiers};
-use ratatui::crossterm::event::{Event, KeyCode, read};
 use tokio::{self};
 
 pub fn setup_input_handler() {
