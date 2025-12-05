@@ -36,6 +36,7 @@ use tower::Service;
 #[derive(Clone)]
 struct HttpService {
     peer_addr: SocketAddr,
+    ssl: bool,
 }
 
 impl Service<HttpRequest<Incoming>> for HttpService {
@@ -52,7 +53,8 @@ impl Service<HttpRequest<Incoming>> for HttpService {
 
     fn call(&mut self, req: HttpRequest<Incoming>) -> Self::Future {
         let peer_ip = self.peer_addr.ip();
-        let is_local = is_local_network(peer_ip);
+
+        let is_acceptable = is_local_network(peer_ip) || self.ssl;
 
         let (parts, body) = req.into_parts();
 
@@ -62,12 +64,12 @@ impl Service<HttpRequest<Incoming>> for HttpService {
 
         let fut = async move {
             let is_websocket_upgrade = path.starts_with("/ws")
-                            && method == Method::GET // WebSocket upgrades use GET
-                            && headers
-                                .get("connection")
-                                .map(|v| v.to_str().unwrap_or("").contains("Upgrade"))
-                                .unwrap_or(false)
-                            && headers.get("upgrade").map(|v| v.to_str().unwrap_or("")) == Some("websocket");
+                && method == Method::GET
+                && headers
+                    .get("connection")
+                    .map(|v| v.to_str().unwrap_or("").contains("Upgrade"))
+                    .unwrap_or(false)
+                && headers.get("upgrade").map(|v| v.to_str().unwrap_or("")) == Some("websocket");
 
             if is_websocket_upgrade {
                 log_message("Attempting WebSocket upgrade on /ws");
@@ -137,7 +139,7 @@ impl Service<HttpRequest<Incoming>> for HttpService {
                     Err(_) => None,
                 };
 
-                Ok(api::handle(&path, &is_local, headers.clone(), body_string).await)
+                Ok(api::handle(&path, &is_acceptable, headers.clone(), body_string).await)
             } else {
                 let mut path_parts: Vec<&str> = path.split("/").collect();
                 let name = path_parts.remove(path_parts.len() - 1);
@@ -202,9 +204,44 @@ impl Service<HttpRequest<Incoming>> for HttpService {
     }
 }
 
-fn is_local_network(_addr: IpAddr) -> bool {
-    //  PLACEHOLDER
-    return true;
+pub fn is_local_network(addr: IpAddr) -> bool {
+    match addr {
+        IpAddr::V4(v4) => {
+            let octets = v4.octets();
+            if octets[0] == 10 {
+                return true;
+            }
+            if octets[0] == 172 && (16..=31).contains(&octets[1]) {
+                return true;
+            }
+            if octets[0] == 192 && octets[1] == 168 {
+                return true;
+            }
+            if octets[0] == 127 {
+                return true;
+            }
+            if octets[0] == 169 && octets[1] == 254 {
+                return true;
+            }
+
+            false
+        }
+
+        IpAddr::V6(v6) => {
+            let segments = v6.segments();
+            if (segments[0] & 0xfe00) == 0xfc00 {
+                return true;
+            }
+            if (segments[0] & 0xffc0) == 0xfe80 {
+                return true;
+            }
+            if v6.is_loopback() {
+                return true;
+            }
+
+            false
+        }
+    }
 }
 
 async fn run_http_server(port: u16) -> bool {
@@ -255,7 +292,7 @@ async fn run_http_server(port: u16) -> bool {
                 accepted = listener.accept() => {
                     match accepted {
                         std::result::Result::Ok((stream, addr)) => {
-                            let service = HttpService { peer_addr: addr };
+                            let service = HttpService { ssl: false, peer_addr: addr };
                             let io = TokioIo::new(stream);
 
                             // Subscribe to the shutdown signal for this specific connection
@@ -359,7 +396,7 @@ async fn run_tls_server(port: u16, tls_config: Arc<ServerConfig>) -> bool {
                 accepted = listener.accept() => {
                     match accepted {
                         std::result::Result::Ok((stream, addr)) => {
-                            let service = HttpService { peer_addr: addr };
+                            let service = HttpService { ssl: true, peer_addr: addr };
                             let acceptor = acceptor.clone();
 
                             // Subscribe to the shutdown signal for this specific connection

@@ -150,6 +150,7 @@ pub async fn render_tui() {
                     f,
                     stack[0],
                     "CPU".to_string(),
+                    "%".to_string(),
                     state.with_width(38).cpu,
                     Borders::TOP.union(Borders::LEFT).union(Borders::RIGHT),
                     Color::Cyan,
@@ -164,6 +165,7 @@ pub async fn render_tui() {
                     f,
                     stack[1],
                     "RAM".to_string(),
+                    "%".to_string(),
                     state.with_width(38).ram,
                     Borders::TOP.union(Borders::LEFT).union(Borders::RIGHT),
                     Color::Green,
@@ -178,6 +180,7 @@ pub async fn render_tui() {
                     f,
                     stack[2],
                     "PING".to_string(),
+                    "ms".to_string(),
                     state.with_width(38).ping,
                     Borders::ALL,
                     Color::Magenta,
@@ -199,6 +202,7 @@ pub fn render_graphs(
     f: &mut Frame<'_>,
     area: Rect,
     title: String,
+    unit: String,
     graph: Vec<(f64, f64)>,
     borders: Borders,
     color: Color,
@@ -214,9 +218,10 @@ pub fn render_graphs(
     let max_y = graph.iter().map(|(_, y)| *y).fold(f64::MIN, f64::max);
     let block = Block::default()
         .title(format!(
-            "{}: {}──{}/{} MIN/MAX ",
+            "─{}:─{}{}──{}/{}─MIN/MAX",
             title,
             graph.last().unwrap_or(&(0.0 as f64, 0.0 as f64)).1 as i64,
+            unit,
             min_y as i64,
             max_y as i64
         ))
