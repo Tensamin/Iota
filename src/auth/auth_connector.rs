@@ -2,10 +2,10 @@ use crate::CONFIG;
 use crate::data::communication::{CommunicationType, CommunicationValue, DataTypes};
 use crate::users::user_profile::UserProfile;
 use json::JsonValue;
+use json::number::Number;
 use reqwest::header::CONTENT_TYPE;
 use reqwest::{Client, Response};
 use std::time::Duration;
-use uuid::Uuid;
 #[derive(Debug, Clone)]
 pub struct AuthUser {
     pub created_at: i64,
@@ -27,7 +27,7 @@ fn client() -> Client {
         .unwrap()
 }
 
-pub async fn unregister_user(user_id: Uuid, reset_token: &str) -> Option<bool> {
+pub async fn unregister_user(user_id: i64, reset_token: &str) -> Option<bool> {
     let url = format!("https:/auth.tensamin.net/api/delete/{}", user_id);
     let client = client();
 
@@ -46,19 +46,7 @@ pub async fn unregister_user(user_id: Uuid, reset_token: &str) -> Option<bool> {
     Option::from(cv.is_type(CommunicationType::success))
 }
 
-pub async fn get_uuid(username: &str) -> Option<Uuid> {
-    let url = format!("https://auth.tensamin.net/api/get/uuid/{}", username);
-    let client = client();
-    let res = client.get(&url).send().await.ok()?;
-    let json = res.text().await.ok()?;
-    let cv = CommunicationValue::from_json(&json);
-    if !cv.is_type(CommunicationType::success) {
-        return None;
-    }
-    Uuid::parse_str(&*cv.get_data(DataTypes::user_id).unwrap().to_string()).ok()
-}
-
-pub async fn get_user(user_id: Uuid) -> Option<AuthUser> {
+pub async fn get_user(user_id: i64) -> Option<AuthUser> {
     let url = format!("https://auth.tensamin.net/api/get/{}", user_id);
     let client = client();
     let res = client.get(&url).send().await.ok()?;
@@ -97,14 +85,16 @@ pub async fn get_user(user_id: Uuid) -> Option<AuthUser> {
     })
 }
 
-pub async fn get_register() -> Option<Uuid> {
+pub async fn get_register() -> Option<i64> {
     let url = "https://auth.tensamin.net/api/register/init".to_string();
     let client = client();
     let res = client.get(&url).send().await.ok()?;
     let json = res.text().await.ok()?;
 
     let cv = CommunicationValue::from_json(&json);
-    Uuid::parse_str(&*cv.get_data(DataTypes::user_id).unwrap().to_string()).ok()
+    cv.get_data(DataTypes::user_id)
+        .unwrap_or(&json::JsonValue::Number(Number::from(0)))
+        .as_i64()
 }
 
 pub async fn complete_register(user_profile: &UserProfile, iota_id: &str) -> bool {
@@ -112,7 +102,7 @@ pub async fn complete_register(user_profile: &UserProfile, iota_id: &str) -> boo
     let client = client();
 
     let mut payload = JsonValue::new_object();
-    payload["uuid"] = user_profile.user_id.to_string().into();
+    payload["id"] = user_profile.user_id.into();
     payload["public_key"] = user_profile.public_key.clone().into();
     payload["private_key_hash"] = user_profile.private_key_hash.clone().into();
     payload["username"] = user_profile.username.clone().into();

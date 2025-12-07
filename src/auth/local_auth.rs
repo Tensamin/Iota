@@ -1,9 +1,8 @@
 use json::JsonValue;
-use uuid::Uuid;
 
 use crate::util::file_util::load_file;
 
-pub fn is_private_key_valid(user_id: &Uuid, key_hash: &str) -> bool {
+pub fn is_private_key_valid(user_id: &i64, key_hash: &str) -> bool {
     let file_contents = load_file("", "users.json");
 
     let users = json::parse(&file_contents).unwrap();

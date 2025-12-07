@@ -8,12 +8,11 @@ use base64::{Engine as _, engine::general_purpose};
 use json::{JsonValue, object};
 use rand::Rng;
 use rand::rngs::OsRng;
-use uuid::Uuid;
 
 // --- UserProfile ---
 #[derive(Clone, Debug)]
 pub struct UserProfile {
-    pub user_id: Uuid,
+    pub user_id: i64,
     pub username: String,
     pub public_key: String,
     pub private_key_hash: String,
@@ -24,7 +23,7 @@ pub struct UserProfile {
 
 impl UserProfile {
     pub fn new(
-        user_id: Uuid,
+        user_id: i64,
         username: String,
         display_name: Option<String>,
         public_key: String,
@@ -47,7 +46,7 @@ impl UserProfile {
 
     pub fn to_json(&self) -> JsonValue {
         let mut obj = object! {
-            "uuid" => self.user_id.to_string(),
+            "uuid" => self.user_id,
             "username" => self.username.clone(),
             "public_key" => self.public_key.clone(),
             "private_key_hash" => self.private_key_hash.clone(),
@@ -61,7 +60,7 @@ impl UserProfile {
     }
     pub fn frontend(&self) -> JsonValue {
         let mut obj = object! {
-            "uuid" => self.user_id.to_string(),
+            "uuid" => self.user_id,
             "username" => self.username.clone(),
             "public_key" => self.public_key.clone(),
             "private_key_hash" => self.private_key_hash.clone(),
@@ -78,7 +77,7 @@ impl UserProfile {
         obj
     }
     pub async fn from_json(j: &JsonValue) -> Option<Self> {
-        let user_id = Uuid::parse_str(j["uuid"].as_str()?).ok()?;
+        let user_id = j["uuid"].as_i64()?;
         let username = j["username"].as_str()?.to_string();
         let public_key = j["public_key"].as_str()?.to_string();
         let private_key_hash = j["private_key_hash"].as_str()?.to_string();

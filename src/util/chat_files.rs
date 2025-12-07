@@ -2,7 +2,6 @@ use crate::util::file_util::{get_children, get_directory, load_file, save_file};
 use json::{self, JsonValue, array, object};
 use std::fs::{self};
 use std::path::Path;
-use uuid::Uuid;
 
 use crate::gui::log_panel::log_message;
 
@@ -27,8 +26,8 @@ impl MessageState {
 pub fn add_message(
     send_time: u128,
     storage_owner_is_sender: bool,
-    storage_owner: Uuid,
-    external_user: Uuid,
+    storage_owner: i64,
+    external_user: i64,
     message: &str,
 ) {
     let user_dir = format!(
@@ -87,8 +86,8 @@ pub fn add_message(
     save_file(&user_dir, &file_name, &message_chunk.dump());
 }
 pub fn change_message_state(
-    storage_owner: Uuid,
-    external_user: Uuid,
+    storage_owner: i64,
+    external_user: i64,
     timestamp: i64,
     new_state: MessageState,
 ) -> std::io::Result<()> {
@@ -132,8 +131,8 @@ pub fn change_message_state(
 }
 
 pub fn get_messages(
-    storage_owner: Uuid,
-    external_user: Uuid,
+    storage_owner: i64,
+    external_user: i64,
     loaded_messages: i64,
     amount: i64,
 ) -> JsonValue {

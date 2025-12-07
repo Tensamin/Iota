@@ -12,6 +12,7 @@ use hkdf::Hkdf;
 use hyper::upgrade::Upgraded;
 use hyper_util::rt::TokioIo;
 use json::JsonValue;
+use json::number::Number;
 use rand::{Rng, distributions::Alphanumeric};
 use sha2::Sha256;
 use std::sync::Arc;
@@ -24,7 +25,7 @@ use x448::PublicKey;
 pub struct CommunityConnection {
     pub sender: Arc<RwLock<SplitSink<WebSocketStream<TokioIo<Upgraded>>, Message>>>,
     pub receiver: Arc<RwLock<SplitStream<WebSocketStream<TokioIo<Upgraded>>>>>,
-    pub user_id: Arc<RwLock<Option<Uuid>>>,
+    pub user_id: Arc<RwLock<i64>>,
     pub community: Arc<RwLock<Option<Arc<Community>>>>,
     identified: Arc<RwLock<bool>>,
     challenged: Arc<RwLock<bool>>,
@@ -41,7 +42,7 @@ impl CommunityConnection {
         Arc::new(Self {
             sender: Arc::new(RwLock::new(sender)),
             receiver: Arc::new(RwLock::new(receiver)),
-            user_id: Arc::new(RwLock::new(None)),
+            user_id: Arc::new(RwLock::new(0)),
             community: Arc::new(RwLock::new(Some(community))),
             identified: Arc::new(RwLock::new(false)),
             challenged: Arc::new(RwLock::new(false)),
@@ -58,7 +59,7 @@ impl CommunityConnection {
     pub async fn get_community(&self) -> Option<Arc<Community>> {
         self.community.read().await.clone()
     }
-    pub async fn get_user_id(&self) -> Option<Uuid> {
+    pub async fn get_user_id(&self) -> i64 {
         *self.user_id.read().await
     }
     pub async fn is_identified(&self) -> bool {
@@ -67,9 +68,8 @@ impl CommunityConnection {
 
     pub async fn handle_message(self: Arc<Self>, message: String) {
         let mut cv = CommunicationValue::from_json(&message);
-        if let Some(user_id) = self.get_user_id().await {
-            cv = cv.with_sender(user_id);
-        }
+        let user_id = self.get_user_id().await;
+        cv = cv.with_sender(user_id);
 
         if cv.is_type(CommunicationType::identification) && !self.is_identified().await {
             self.handle_identification(cv).await;
@@ -109,30 +109,17 @@ impl CommunityConnection {
             .get_community()
             .await
             .unwrap()
-            .run_function(self.get_user_id().await.unwrap(), name, path, function, &cv)
+            .run_function(self.get_user_id().await, name, path, function, &cv)
             .await;
 
         self.send_message(&result).await;
     }
     async fn handle_identification(&self, cv: CommunicationValue) {
-        let user_id = match cv.get_data(DataTypes::user_id) {
-            Some(id_str) => match Uuid::parse_str(&id_str.to_string()) {
-                Ok(id) => id,
-                Err(_) => {
-                    self.send_error_response(
-                        &cv.get_id(),
-                        CommunicationType::error_invalid_user_id,
-                    )
-                    .await;
-                    return;
-                }
-            },
-            None => {
-                self.send_error_response(&cv.get_id(), CommunicationType::error_invalid_user_id)
-                    .await;
-                return;
-            }
-        };
+        let user_id = cv
+            .get_data(DataTypes::user_id)
+            .unwrap_or(&JsonValue::Number(Number::from(0)))
+            .as_i64()
+            .unwrap_or(0);
 
         let Some(user) = get_user(user_id).await else {
             self.send_error_response(&cv.get_id(), CommunicationType::error_invalid_user_id)
@@ -145,7 +132,7 @@ impl CommunityConnection {
             *auth_guard = Some(user.clone());
 
             let mut user_id_guard = self.user_id.write().await;
-            *user_id_guard = Some(user_id);
+            *user_id_guard = user_id;
 
             let mut identified_guard = self.identified.write().await;
             *identified_guard = true;
@@ -347,11 +334,12 @@ impl CommunityConnection {
         };
         let arc = Arc::new(community);
 
-        let Some(user_id) = self.get_user_id().await else {
+        let user_id = self.get_user_id().await;
+        if user_id == 0 {
             self.send_error_response(&cv.get_id(), CommunicationType::error)
                 .await;
             return;
-        };
+        }
 
         arc.add_connection(self.clone()).await;
 
@@ -382,7 +370,7 @@ impl CommunityConnection {
     }
     pub async fn handle_close(self: Arc<Self>) {
         if self.is_identified().await {
-            if let Some(_) = self.get_user_id().await {
+            if self.get_user_id().await != 0 {
                 self.community
                     .read()
                     .await

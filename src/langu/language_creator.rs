@@ -8,6 +8,7 @@ pub fn create_languages() -> Result<(), JsonError> {
     let mut general_texts = JsonValue::new_object();
     let mut debug_messages = JsonValue::new_object();
 
+    frontend_messages.insert("error", "An error occurred")?;
     // FRONTEND
     frontend_messages.insert("get_chats", "User {} is loading conversations")?;
     frontend_messages.insert("message_get", "User {} is loading messages")?;

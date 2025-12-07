@@ -1,10 +1,9 @@
 use json::{self, JsonValue, array};
-use uuid::Uuid;
 
 use crate::users::contact::Contact;
 use crate::util::file_util::{load_file, save_file};
 
-pub fn mod_user(storage_owner: Uuid, contact: &Contact) {
+pub fn mod_user(storage_owner: i64, contact: &Contact) {
     let dir: &str = &format!("users/{}/contacts/", storage_owner);
     let s = load_file(dir, "contacts.json");
 
@@ -25,7 +24,7 @@ pub fn mod_user(storage_owner: Uuid, contact: &Contact) {
     save_file(&dir, "contacts.json", &contacts.dump());
 }
 
-pub fn get_user(storage_owner: Uuid, user_id: Uuid) -> Option<Contact> {
+pub fn get_user(storage_owner: i64, user_id: i64) -> Option<Contact> {
     let dir = format!("users/{}/contacts/", storage_owner);
     let s = load_file(&dir, "contacts.json");
     if s.is_empty() {
@@ -34,8 +33,8 @@ pub fn get_user(storage_owner: Uuid, user_id: Uuid) -> Option<Contact> {
 
     if let Ok(contacts) = json::parse(&s) {
         for i in 0..contacts.len() {
-            if let Some(uid) = contacts[i]["user_id"].as_str() {
-                if Uuid::parse_str(uid).ok()? == user_id {
+            if let Some(uid) = contacts[i]["user_id"].as_i64() {
+                if uid == user_id {
                     return Option::from(Contact::from_json(&contacts[i]));
                 }
             }
@@ -44,7 +43,7 @@ pub fn get_user(storage_owner: Uuid, user_id: Uuid) -> Option<Contact> {
     None
 }
 
-pub fn get_users(storage_owner: Uuid) -> JsonValue {
+pub fn get_users(storage_owner: i64) -> JsonValue {
     let dir: &str = &format!("users/{}/contacts/", storage_owner);
     let s = load_file(dir, "contacts.json");
 

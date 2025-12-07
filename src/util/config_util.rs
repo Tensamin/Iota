@@ -28,12 +28,8 @@ impl ConfigUtil {
         }
     }
 
-    pub fn get_iota_id(&self) -> Uuid {
-        self.config["iota_id"]
-            .as_str()
-            .unwrap_or_default()
-            .parse()
-            .unwrap_or_default()
+    pub fn get_iota_id(&self) -> i64 {
+        self.config["iota_id"].as_i64().unwrap_or(0)
     }
 
     pub fn get_port(&self) -> u16 {
@@ -44,8 +40,8 @@ impl ConfigUtil {
         &self.config[key]
     }
 
-    pub fn change(&mut self, key: &str, value: &str) {
-        self.config[key] = JsonValue::String(value.to_string());
+    pub fn change(&mut self, key: &str, value: JsonValue) {
+        self.config[key] = value;
         self.unique = true;
     }
 

@@ -11,7 +11,6 @@ use http_body_util::Full;
 use hyper::body::Bytes;
 use hyper::{HeaderMap, Response as HttpResponse, StatusCode};
 use json::JsonValue;
-use uuid::Uuid;
 
 use crate::util::config_util::CONFIG;
 use crate::{APP_STATE, communities::community_manager, users::user_manager};
@@ -108,8 +107,7 @@ pub async fn handle(
                             if body.is_none() {
                                 "{\"type\":\"error\"}".to_string()
                             } else {
-                                let uuid = Uuid::parse_str(body.unwrap()["uuid"].as_str().unwrap())
-                                    .unwrap();
+                                let uuid = body.unwrap()["uuid"].as_i64().unwrap_or(0);
                                 unregister_user(
                                     uuid,
                                     &user_manager::get_user(uuid).unwrap().reset_token,

@@ -13,9 +13,7 @@ use rand_core::OsRng;
 use rand_core::RngCore;
 use sha2::{Digest, Sha256};
 use std::io::{self};
-use std::str::FromStr;
 use std::sync::Mutex;
-use uuid::Uuid;
 use x448::{PublicKey, Secret};
 
 static USERS: Lazy<Mutex<Vec<UserProfile>>> = Lazy::new(|| Mutex::new(Vec::new()));
@@ -25,7 +23,7 @@ static UNIQUE: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 pub async fn load_from_tu(username: &str) -> Result<(), ()> {
     let file_content = load_file("", &format!("{}.tu", username));
     let segments = file_content.split("::").collect::<Vec<&str>>();
-    let uuid = Uuid::from_str(segments[0]).unwrap();
+    let uuid = segments[0].parse::<i64>().unwrap_or(0);
     let b64_private_key = segments[1];
 
     let secret: Secret = crypto_helper::load_secret_key(b64_private_key).unwrap();
@@ -86,7 +84,7 @@ pub async fn create_user(username: &str) -> (Option<UserProfile>, Option<String>
     (Some(up), Some(STANDARD.encode(&private_key.as_bytes())))
 }
 
-pub fn get_user(user_id: Uuid) -> Option<UserProfile> {
+pub fn get_user(user_id: i64) -> Option<UserProfile> {
     USERS
         .lock()
         .unwrap()
@@ -99,7 +97,7 @@ pub fn get_users() -> Vec<UserProfile> {
     USERS.lock().unwrap().clone()
 }
 
-pub fn remove_user(user_id: Uuid) {
+pub fn remove_user(user_id: i64) {
     let mut users = USERS.lock().unwrap();
     users.retain(|u| u.user_id != user_id);
     *UNIQUE.lock().unwrap() = true;

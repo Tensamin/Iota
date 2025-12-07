@@ -1,10 +1,9 @@
 use json::{self, JsonValue};
 use std::time::{SystemTime, UNIX_EPOCH};
-use uuid::Uuid;
 
 #[derive(Debug, Clone)]
 pub struct Contact {
-    pub user_id: Option<Uuid>,
+    pub user_id: Option<i64>,
     pub user_name: Option<String>,
     pub last_message_at: Option<i64>,
 }
@@ -24,7 +23,7 @@ impl Default for Contact {
 }
 
 impl Contact {
-    pub fn new(user_id: Uuid) -> Self {
+    pub fn new(user_id: i64) -> Self {
         Contact {
             user_id: Some(user_id),
             user_name: None,
@@ -49,7 +48,7 @@ impl Contact {
         obj
     }
     pub fn from_json(o: &JsonValue) -> Contact {
-        let user_id = o["user_id"].as_str().and_then(|s| Uuid::parse_str(s).ok());
+        let user_id = o["user_id"].as_i64();
 
         let user_name = o["user_name"].as_str().map(|s| s.to_string());
 

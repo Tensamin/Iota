@@ -1,6 +1,7 @@
 use crate::{ACTIVE_TASKS, RELOAD, SHUTDOWN, gui::tui::UNIQUE, util::config_util::CONFIG};
 use crossterm::event::{Event, KeyCode, read};
 use crossterm::event::{KeyEvent, KeyModifiers};
+use json::JsonValue;
 use tokio::{self};
 
 pub fn setup_input_handler() {
@@ -55,7 +56,10 @@ pub async fn handle_input(key: KeyEvent) {
                 None => password,
             };
 
-            CONFIG.write().await.change("password", password);
+            CONFIG
+                .write()
+                .await
+                .change("password", JsonValue::String(password.to_string()));
             CONFIG.write().await.update();
             *UNIQUE.write().await = true;
         }
@@ -66,7 +70,10 @@ pub async fn handle_input(key: KeyEvent) {
             };
             let password = &format!("{}{}", password, c);
 
-            CONFIG.write().await.change("password", password);
+            CONFIG
+                .write()
+                .await
+                .change("password", JsonValue::String(password.to_string()));
             CONFIG.write().await.update();
             *UNIQUE.write().await = true;
         }
@@ -77,7 +84,10 @@ pub async fn handle_input(key: KeyEvent) {
             };
             let password = &format!("{}{}", password, c);
 
-            CONFIG.write().await.change("password", password);
+            CONFIG
+                .write()
+                .await
+                .change("password", JsonValue::String(password.to_string()));
             CONFIG.write().await.update();
             *UNIQUE.write().await = true;
         }

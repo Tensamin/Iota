@@ -33,7 +33,7 @@ pub struct Community {
     private_key: Secret,
     public_key: PublicKey,
     pub interactables: Arc<RwLock<Vec<Arc<Box<dyn Interactable>>>>>,
-    pub connections: Arc<RwLock<HashMap<Uuid, Vec<Arc<CommunityConnection>>>>>,
+    pub connections: Arc<RwLock<HashMap<i64, Vec<Arc<CommunityConnection>>>>>,
 }
 
 impl Community {
@@ -130,33 +130,33 @@ impl Community {
             .connections
             .read()
             .await
-            .get(&other.get_user_id().await.unwrap())
+            .get(&other.get_user_id().await)
             .cloned()
             .unwrap_or_default();
         vec.push(other.clone());
         self.connections
             .write()
             .await
-            .insert(other.get_user_id().await.unwrap(), vec);
+            .insert(other.get_user_id().await, vec);
     }
     pub async fn remove_connection(self: &Arc<Self>, other: Arc<CommunityConnection>) {
         let mut vec = self
             .connections
             .read()
             .await
-            .get(&other.get_user_id().await.unwrap())
+            .get(&other.get_user_id().await)
             .cloned()
             .unwrap_or_default();
         vec.retain(|conn| !Arc::ptr_eq(conn, &other));
         self.connections
             .write()
             .await
-            .insert(other.get_user_id().await.unwrap(), vec);
+            .insert(other.get_user_id().await, vec);
     }
-    pub async fn get_connections(&self) -> HashMap<Uuid, Vec<Arc<CommunityConnection>>> {
+    pub async fn get_connections(&self) -> HashMap<i64, Vec<Arc<CommunityConnection>>> {
         self.connections.read().await.clone()
     }
-    pub async fn get_connections_for_user(&self, user_id: Uuid) -> Vec<Arc<CommunityConnection>> {
+    pub async fn get_connections_for_user(&self, user_id: i64) -> Vec<Arc<CommunityConnection>> {
         self.connections
             .read()
             .await
@@ -166,7 +166,7 @@ impl Community {
     }
     pub async fn get_interactables(
         &self,
-        user_id: Uuid,
+        user_id: i64,
     ) -> Vec<Arc<Box<dyn Interactable + 'static>>> {
         self.interactables.read().await.clone()
     }
@@ -191,7 +191,7 @@ impl Community {
     }
     pub async fn run_function(
         self: &mut Arc<Self>,
-        user_id: Uuid,
+        user_id: i64,
         name: &str,
         path: &str,
         function: &str,

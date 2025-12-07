@@ -2,12 +2,11 @@ use crate::util::file_util::save_file;
 use json::{self, Array, JsonValue};
 use std::fs;
 use std::path::Path;
-use uuid::Uuid;
 
 pub struct UserCommunityUtil;
 
 impl UserCommunityUtil {
-    pub fn add_community(storage_owner: Uuid, address: String, title: String, position: String) {
+    pub fn add_community(storage_owner: i64, address: String, title: String, position: String) {
         let file_path = format!("users/{}/", storage_owner);
         let mut communities = Self::load_array(&file_path);
 
@@ -25,7 +24,7 @@ impl UserCommunityUtil {
         );
     }
 
-    pub fn remove_community(storage_owner: Uuid, community_address: String) {
+    pub fn remove_community(storage_owner: i64, community_address: String) {
         let file_path = format!("users/{}/", storage_owner);
         let communities = Self::load_array(&file_path);
 
@@ -41,7 +40,7 @@ impl UserCommunityUtil {
         );
     }
 
-    pub fn get_communities(storage_owner: Uuid) -> Array {
+    pub fn get_communities(storage_owner: i64) -> Array {
         let file_path = format!("users/{}/communities.json", storage_owner);
         Self::load_array(&file_path)
     }

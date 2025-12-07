@@ -1,13 +1,14 @@
 use json::JsonValue;
+use json::number::Number;
 use json::{self};
 use once_cell::sync::Lazy;
 use pnet::datalink::NetworkInterface;
 use std::sync::Arc;
 use std::sync::LazyLock;
 use std::sync::Mutex;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
 use tokio::time::{Duration, sleep};
-use uuid::Uuid;
 
 mod auth;
 mod communities;
@@ -72,10 +73,15 @@ async fn main() {
         // BASIC CONFIGURATION
         &CONFIG.write().await.load();
         if !CONFIG.read().await.config.has_key("iota_id") {
-            CONFIG
-                .write()
-                .await
-                .change("iota_id", &Uuid::new_v4().to_string());
+            CONFIG.write().await.change(
+                "iota_id",
+                JsonValue::Number(Number::from(
+                    (SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap()
+                        .as_millis() as i64),
+                )),
+            );
             CONFIG.write().await.update();
         }
 
@@ -96,15 +102,8 @@ async fn main() {
             sb = sb + ",";
         }
         log_message(format!(
-            "IOTA ID:  {}-####-####-####-############",
-            CONFIG
-                .read()
-                .await
-                .get_iota_id()
-                .to_string()
-                .split("-")
-                .next()
-                .unwrap()
+            "IOTA ID:  {}",
+            CONFIG.read().await.get_iota_id().to_string()
         ));
         log_message(format!("User IDS: {}", sb));
 
@@ -162,7 +161,7 @@ async fn main() {
                         .add_data(DataTypes::user_ids, JsonValue::String(sb.to_string()))
                         .add_data(
                             DataTypes::iota_id,
-                            JsonValue::String(CONFIG.read().await.get_iota_id().to_string()),
+                            JsonValue::Number(Number::from(CONFIG.read().await.get_iota_id())),
                         )
                         .to_json()
                         .to_string()

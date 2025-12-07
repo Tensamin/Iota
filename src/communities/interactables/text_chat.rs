@@ -28,7 +28,7 @@ impl TextChat {
             community: Arc::new(Community::new()),
         }
     }
-    pub fn add_message(&self, send_time: u128, sender: Uuid, message: &str) {
+    pub fn add_message(&self, send_time: u128, sender: i64, message: &str) {
         let user_dir = &format!(
             "communities/{}/interactables/{}/{}",
             self.get_community().get_name(),
@@ -211,12 +211,11 @@ impl Interactable for TextChat {
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
                 .as_millis();
-            self.add_message(milliseconds_timestamp, cv.get_sender().unwrap(), message);
+            self.add_message(milliseconds_timestamp, cv.get_sender(), message);
 
             let mut distribution_payload = JsonValue::new_object();
             distribution_payload["message"] = JsonValue::String(message.to_string());
-            distribution_payload["sender_id"] =
-                JsonValue::String(cv.get_sender().unwrap().to_string());
+            distribution_payload["sender_id"] = JsonValue::String(cv.get_sender().to_string());
             distribution_payload["send_time"] =
                 JsonValue::String(milliseconds_timestamp.to_string());
             let distribution = CommunicationValue::new(CommunicationType::update)
@@ -226,7 +225,7 @@ impl Interactable for TextChat {
                 .add_data_str(DataTypes::result, "message_live".to_string())
                 .add_data(DataTypes::payload, distribution_payload);
 
-            let connections: HashMap<Uuid, Vec<Arc<CommunityConnection>>> =
+            let connections: HashMap<i64, Vec<Arc<CommunityConnection>>> =
                 self.get_community().get_connections().await.clone();
 
             for con in connections.values() {
