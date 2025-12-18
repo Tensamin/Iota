@@ -1,33 +1,47 @@
-use crate::{ACTIVE_TASKS, RELOAD, SHUTDOWN, gui::tui::UNIQUE, util::config_util::CONFIG};
-use crossterm::event::{Event, KeyCode, read};
-use crossterm::event::{KeyEvent, KeyModifiers};
+use std::time::Duration;
+
+use crate::ACTIVE_TASKS;
+use crate::{RELOAD, SHUTDOWN, gui::tui::UNIQUE, util::config_util::CONFIG};
+// Switched to poll/read which are available by default in crossterm
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, poll, read};
+
 use json::JsonValue;
-use tokio::{self};
 
 pub fn setup_input_handler() {
     tokio::spawn(async move {
         {
-            ACTIVE_TASKS
-                .lock()
-                .unwrap()
-                .push("Input Handler".to_string());
+            let mut tasks = ACTIVE_TASKS.lock().unwrap();
+            tasks.push("Input Handler".to_string());
         }
-        while let Ok(event) = read() {
-            if *SHUTDOWN.read().await {
-                break;
+
+        loop {
+            {
+                let should_shutdown = *SHUTDOWN.read().await;
+                if should_shutdown {
+                    break;
+                }
             }
-            if let Event::Key(key) = event {
-                handle_input(key).await;
-            }
-            if *SHUTDOWN.read().await {
-                break;
+
+            let has_event = match poll(Duration::from_millis(100)) {
+                Ok(true) => true,
+                Ok(false) => false,
+                Err(_) => false,
+            };
+
+            if has_event {
+                match read() {
+                    Ok(event) => {
+                        if let Event::Key(key_event) = event {
+                            handle_input(key_event).await;
+                        }
+                    }
+                    Err(_) => (),
+                }
             }
         }
         {
-            ACTIVE_TASKS
-                .lock()
-                .unwrap()
-                .retain(|t| !t.eq(&"Input Handler".to_string()));
+            let mut tasks = ACTIVE_TASKS.lock().unwrap();
+            tasks.retain(|t| t != "Input Handler");
         }
     });
 }

@@ -1,5 +1,6 @@
 use crate::APP_STATE;
 use crate::data::communication::{CommunicationType, CommunicationValue, DataTypes};
+use crate::gui::log_panel::log_message;
 use crate::omikron::omikron_connection::OmikronConnection;
 use json::number::Number;
 use tokio::time::Instant;

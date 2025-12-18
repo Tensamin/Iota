@@ -33,9 +33,17 @@ pub fn log_message(msg: impl Into<String>) {
         *UNIQUE.write().await = true;
     });
 }
+pub fn log_message_format(msg: impl Into<String>, args: &[&str]) {
+    APP_STATE
+        .lock()
+        .unwrap()
+        .push_log(format(&msg.into(), args));
+    tokio::spawn(async move {
+        *UNIQUE.write().await = true;
+    });
+}
 
 pub fn setup() {
-    // Start a background thread to sample metrics
     tokio::spawn(async move {
         {
             ACTIVE_TASKS.lock().unwrap().push("metrics".to_string());

@@ -2,7 +2,6 @@ use crate::util::file_util::{load_file, save_file};
 use json::JsonValue;
 use once_cell::sync::Lazy;
 use tokio::sync::RwLock;
-use uuid::Uuid;
 
 pub static CONFIG: Lazy<RwLock<ConfigUtil>> = Lazy::new(|| RwLock::new(ConfigUtil::new()));
 

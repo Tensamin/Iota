@@ -44,7 +44,6 @@ pub static APP_STATE: LazyLock<Arc<Mutex<AppState>>> =
 pub static SHUTDOWN: Lazy<RwLock<bool>> = Lazy::new(|| RwLock::new(false));
 pub static RELOAD: Lazy<RwLock<bool>> = Lazy::new(|| RwLock::new(true));
 pub static ACTIVE_TASKS: Lazy<Mutex<Vec<String>>> = Lazy::new(|| Mutex::new(Vec::new()));
-pub static RECONNECT: Lazy<RwLock<bool>> = Lazy::new(|| RwLock::new(false));
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 8)]
 #[allow(unused_must_use, dead_code)]
@@ -76,10 +75,10 @@ async fn main() {
             CONFIG.write().await.change(
                 "iota_id",
                 JsonValue::Number(Number::from(
-                    (SystemTime::now()
+                    SystemTime::now()
                         .duration_since(UNIX_EPOCH)
                         .unwrap()
-                        .as_millis() as i64),
+                        .as_millis() as i64,
                 )),
             );
             CONFIG.write().await.update();

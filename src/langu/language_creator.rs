@@ -22,7 +22,10 @@ pub fn create_languages() -> Result<(), JsonError> {
         "identification_response",
         "IOTA identified on Omikron, {} users!",
     )?;
-    omikron_messages.insert("send_message_failed", "Failed to send message to Omikron")?;
+    omikron_messages.insert(
+        "send_message_failed",
+        "Failed to send message to Omikron: {}",
+    )?;
     omikron_messages.insert("connection_failed", "Failed to connect to Omikron: {}")?;
 
     // BUTTONS

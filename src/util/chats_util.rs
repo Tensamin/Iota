@@ -1,5 +1,6 @@
 use json::{self, JsonValue, array};
 
+use crate::gui::log_panel::log_message;
 use crate::users::contact::Contact;
 use crate::util::file_util::{load_file, save_file};
 
@@ -14,7 +15,7 @@ pub fn mod_user(storage_owner: i64, contact: &Contact) {
     };
 
     for i in 0..contacts.len() {
-        if contacts[i]["user_id"].as_str() == Some(&contact.user_id.unwrap().to_string()) {
+        if contacts[i]["user_id"] == contact.user_id {
             contacts.array_remove(i);
             break;
         }
@@ -56,6 +57,5 @@ pub fn get_users(storage_owner: i64) -> JsonValue {
             }
         }
     }
-
     contacts_out
 }
