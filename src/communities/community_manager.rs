@@ -48,3 +48,12 @@ pub async fn save_communities() {
 pub async fn get_communities() -> Vec<Arc<Community>> {
     COMMUNITY_REGISTRY.lock().await.values().cloned().collect()
 }
+
+pub async fn rename_community(old_name: &str, new_name: &str) {
+    if let Some(community) = COMMUNITY_REGISTRY.lock().await.remove(old_name) {
+        COMMUNITY_REGISTRY
+            .lock()
+            .await
+            .insert(new_name.to_string(), community);
+    }
+}

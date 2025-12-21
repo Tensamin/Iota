@@ -17,7 +17,6 @@ use crossterm::{
 use once_cell::sync::Lazy;
 use ratatui::{
     Frame, Terminal,
-    crossterm::event::poll,
     layout::{Constraint, Direction, Layout, Rect},
     prelude::CrosstermBackend,
     style::Color,

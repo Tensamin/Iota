@@ -465,7 +465,7 @@ pub async fn start(port: u16) -> bool {
 
     match tls_result {
         Ok(Some(tls_config)) => run_tls_server(port, tls_config).await,
-        Ok(None) => run_http_server(port).await,
+        Ok(_) => run_http_server(port).await,
         Err(e) => {
             log_message(format!("Fatal error during TLS config load: {}", e));
             false

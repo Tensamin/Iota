@@ -8,13 +8,13 @@ use crate::data::communication::{CommunicationType, CommunicationValue};
 use crate::util::file_util;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use json::JsonValue;
+use json::number::Number;
 use json::object::Object;
 use rand::RngCore;
 use rand_core::OsRng;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use uuid::Uuid;
 use x448::{PublicKey, Secret};
 /// Permissions
 // uuid -> interactable/path/like/this/interactable_name:permission
@@ -26,9 +26,9 @@ use x448::{PublicKey, Secret};
 
 pub struct Community {
     name: String,
-    owner_id: Uuid,
-    members: Vec<Uuid>,
-    permissions: HashMap<Uuid, Vec<Permission>>,
+    owner_id: Arc<RwLock<i64>>,
+    members: Vec<i64>,
+    permissions: HashMap<i64, Vec<Permission>>,
     roles: HashMap<String, Vec<Permission>>,
     private_key: Secret,
     public_key: PublicKey,
@@ -45,7 +45,7 @@ impl Community {
         let public_key = PublicKey::from(&private_key);
         Community {
             name: String::new(),
-            owner_id: Uuid::new_v4(),
+            owner_id: Arc::new(RwLock::new(0)),
             members: Vec::new(),
             permissions: HashMap::new(),
             roles: HashMap::new(),
@@ -55,7 +55,7 @@ impl Community {
             connections: Arc::new(RwLock::new(HashMap::new())),
         }
     }
-    pub async fn create(name: String) -> Self {
+    pub async fn create(name: String, owner_id: i64) -> Self {
         let mut buf = [0u8; 56];
         let mut rng = OsRng;
         rng.fill_bytes(&mut buf);
@@ -63,7 +63,7 @@ impl Community {
         let public_key = PublicKey::from(&private_key);
         let c = Community {
             name,
-            owner_id: Uuid::new_v4(),
+            owner_id: Arc::new(RwLock::new(owner_id)),
             members: Vec::new(),
             permissions: HashMap::new(),
             roles: HashMap::new(),
@@ -79,7 +79,7 @@ impl Community {
     pub async fn to_json(&self) -> JsonValue {
         let mut json = JsonValue::new_object();
         json["name"] = self.name.clone().into();
-        json["owner_id"] = self.owner_id.to_string().into();
+        json["owner_id"] = (*self.owner_id.read().await as i64).into();
         json["members"] = self
             .members
             .clone()
@@ -96,7 +96,7 @@ impl Community {
     pub async fn frontend(&self) -> JsonValue {
         let mut json = JsonValue::new_object();
         json["name"] = self.name.clone().into();
-        json["owner_id"] = self.owner_id.to_string().into();
+        json["owner_id"] = (*self.owner_id.read().await as i64).into();
         json["members"] = self
             .members
             .clone()
@@ -109,21 +109,30 @@ impl Community {
         json
     }
 
-    pub fn add_member(&mut self, member_id: Uuid) {
+    pub fn add_member(&mut self, member_id: i64) {
         self.members.push(member_id);
     }
 
-    pub fn remove_member(&mut self, member_id: Uuid) {
+    pub fn remove_member(&mut self, member_id: i64) {
         self.members.retain(|id| *id != member_id);
     }
     pub fn get_name(&self) -> &str {
         &self.name
+    }
+    pub async fn get_owner_id(&self) -> i64 {
+        *self.owner_id.read().await
+    }
+    pub fn get_members(&self) -> Vec<i64> {
+        self.members.clone()
     }
     pub fn get_private_key(&self) -> Secret {
         Secret::from_bytes(self.private_key.as_bytes()).unwrap()
     }
     pub fn get_public_key(&self) -> &PublicKey {
         &self.public_key
+    }
+    pub async fn set_owner(self: Arc<Community>, owner_id: i64) {
+        *self.owner_id.write().await = owner_id;
     }
     pub async fn add_connection(self: &Arc<Self>, other: Arc<CommunityConnection>) {
         let mut vec = self
@@ -166,7 +175,7 @@ impl Community {
     }
     pub async fn get_interactables(
         &self,
-        user_id: i64,
+        _user_id: i64,
     ) -> Vec<Arc<Box<dyn Interactable + 'static>>> {
         self.interactables.read().await.clone()
     }
@@ -191,10 +200,10 @@ impl Community {
     }
     pub async fn run_function(
         self: &mut Arc<Self>,
-        user_id: i64,
+        _user_id: i64,
         name: &str,
         path: &str,
-        function: &str,
+        _function: &str,
         cv: &CommunicationValue,
     ) -> CommunicationValue {
         if path.is_empty() {
@@ -234,7 +243,10 @@ impl Community {
     pub async fn save(&self) {
         let mut json = Object::new();
         json.insert("name", JsonValue::String(self.name.clone()));
-        json.insert("owner_id", JsonValue::String(self.owner_id.to_string()));
+        json.insert(
+            "owner_id",
+            JsonValue::Number(Number::from(*self.owner_id.read().await as i64)),
+        );
 
         json.insert(
             "private_key",
@@ -281,10 +293,10 @@ pub async fn load(name: &String) -> Option<Arc<Community>> {
     let user_data = file_util::load_file(&format!("communities/{}/", name), "users.json");
     let user_json: JsonValue = json::parse(&user_data).unwrap();
     let mut users = Vec::new();
-    let mut permissions: HashMap<Uuid, Vec<Permission>> = HashMap::new();
+    let mut permissions: HashMap<i64, Vec<Permission>> = HashMap::new();
 
     for user in user_json.entries() {
-        let (str, json): (&str, &JsonValue) = user;
+        let (id, json): (&str, &JsonValue) = user;
         let perms_j = &json["permissions"];
         let perms = Vec::new();
         for _ in perms_j.entries() {
@@ -292,7 +304,7 @@ pub async fn load(name: &String) -> Option<Arc<Community>> {
             // perms.push(perm_j.to_string());
         }
 
-        let user_id = Uuid::parse_str(str).unwrap();
+        let user_id: i64 = id.parse().unwrap_or(0);
 
         users.push(user_id);
         permissions.insert(user_id, perms);
@@ -308,7 +320,7 @@ pub async fn load(name: &String) -> Option<Arc<Community>> {
 
     let community = Community {
         name: json_content["name"].as_str().unwrap().to_string(),
-        owner_id: Uuid::parse_str(json_content["owner_id"].as_str().unwrap()).unwrap(),
+        owner_id: Arc::new(RwLock::new(json_content["owner_id"].as_i64().unwrap_or(0))),
         members: users,
         roles,
         permissions,

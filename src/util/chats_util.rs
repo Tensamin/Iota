@@ -1,6 +1,5 @@
 use json::{self, JsonValue, array};
 
-use crate::gui::log_panel::log_message;
 use crate::users::contact::Contact;
 use crate::util::file_util::{load_file, save_file};
 
