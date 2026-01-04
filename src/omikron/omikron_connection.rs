@@ -40,8 +40,8 @@ pub struct OmikronConnection {
     pub user_id: Arc<RwLock<i64>>,
     pub(crate) writer:
         Arc<Mutex<Option<Box<dyn Sink<Message, Error = tungstenite::Error> + Send + Unpin>>>>,
-    waiting: Arc<Mutex<HashMap<Uuid, Box<dyn Fn(CommunicationValue) + Send + Sync>>>>, // waiting for responses
-    pingpong: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>, // ping-pong handler
+    waiting: Arc<Mutex<HashMap<Uuid, Box<dyn Fn(CommunicationValue) + Send + Sync>>>>,
+    pingpong: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
     pub last_ping: Arc<Mutex<i64>>,
     pub message_send_times: Arc<Mutex<HashMap<Uuid, Instant>>>,
     pub is_connected: Arc<Mutex<bool>>,
@@ -346,17 +346,20 @@ impl OmikronConnection {
                             .unwrap_or(&JsonValue::Null)
                             .as_i64()
                             .unwrap_or(0);
+                        let now_ms = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap()
+                            .as_millis() as u128;
+
                         chat_files::add_message(
-                            SystemTime::now()
-                                .duration_since(UNIX_EPOCH)
-                                .unwrap()
-                                .as_millis() as u128,
+                            now_ms,
                             true,
                             my_id,
                             other_id,
                             &*cv.get_data(DataTypes::content).unwrap().to_string(),
                         );
-                        let ack = CommunicationValue::new(CommunicationType::message)
+
+                        let ack = CommunicationValue::new(CommunicationType::success)
                             .with_id(cv.get_id())
                             .with_receiver(my_id);
                         Self::send_message_static(
@@ -365,7 +368,30 @@ impl OmikronConnection {
                             ack.to_json().to_string(),
                         )
                         .await;
-                        let forward = CommunicationValue::forward_to_other_iota(&mut cv);
+
+                        let forward =
+                            CommunicationValue::new(CommunicationType::message_other_iota)
+                                .with_id(cv.get_id())
+                                .with_receiver(other_id)
+                                .add_data(
+                                    DataTypes::receiver_id,
+                                    JsonValue::Number(Number::from(other_id)),
+                                )
+                                .with_sender(my_id)
+                                .add_data(
+                                    DataTypes::send_time,
+                                    JsonValue::String(now_ms.to_string()),
+                                )
+                                .add_data(
+                                    DataTypes::sender_id,
+                                    JsonValue::Number(Number::from(my_id)),
+                                )
+                                .add_data(
+                                    DataTypes::content,
+                                    JsonValue::String(
+                                        cv.get_data(DataTypes::content).unwrap().to_string(),
+                                    ),
+                                );
                         Self::send_message_static(
                             &writer.clone(),
                             is_connected,
