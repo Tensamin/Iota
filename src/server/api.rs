@@ -141,22 +141,46 @@ pub async fn handle(
                 if path_parts.len() >= 4 {
                     match path_parts[3] {
                         "add" => {
-                            if body.is_none() {
-                                "{\"type\":\"error\"}".to_string()
-                            } else {
-                                let name = body.unwrap()["name"].as_str().unwrap().to_string();
-                                let community = Arc::new(Community::create(name).await);
+                            if let Some(body) = body {
+                                let name = body["name"].as_str().unwrap().to_string();
+                                let user_id = body["owner"].as_i64().unwrap_or(0);
+                                let community = Arc::new(Community::create(name, user_id).await);
                                 community_manager::add_community(community).await;
                                 "{\"type\":\"success\"}".to_string()
+                            } else {
+                                "{\"type\":\"error\"}".to_string()
                             }
                         }
                         "remove" => {
-                            if body.is_none() {
-                                "{\"type\":\"error\"}".to_string()
-                            } else {
-                                let name = body.unwrap()["name"].as_str().unwrap().to_string();
+                            if let Some(body) = body {
+                                let name = body["name"].as_str().unwrap().to_string();
                                 community_manager::remove_community(&name).await;
                                 "{\"type\":\"success\"}".to_string()
+                            } else {
+                                "{\"type\":\"error\"}".to_string()
+                            }
+                        }
+                        "change" => {
+                            if path_parts.len() >= 5 {
+                                match path_parts[4] {
+                                    "owner" => {
+                                        if let Some(body) = body {
+                                            let name = body["name"].as_str().unwrap().to_string();
+                                            let owner = body["owner"].as_i64().unwrap_or(0);
+                                            community_manager::get_community(&name)
+                                                .await
+                                                .unwrap()
+                                                .set_owner(owner)
+                                                .await;
+                                            "{\"type\":\"success\"}".to_string()
+                                        } else {
+                                            "{\"type\":\"error\"}".to_string()
+                                        }
+                                    }
+                                    _ => "{\"type\":\"error\"}".to_string(),
+                                }
+                            } else {
+                                "{\"type\":\"error\"}".to_string()
                             }
                         }
                         "get" => {
