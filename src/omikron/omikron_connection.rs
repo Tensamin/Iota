@@ -73,7 +73,7 @@ impl OmikronConnection {
             pingpong: Arc::new(Mutex::new(None)),
             last_ping: Arc::new(Mutex::new(-1)),
             message_send_times: Arc::new(Mutex::new(HashMap::new())),
-            is_connected: Arc::new(Mutex::new(false)),
+            is_connected: Arc::new(Mutex::new(true)),
         });
         let boxed_reader: Box<
             dyn Stream<Item = Result<Message, tungstenite::Error>> + Send + Unpin,
@@ -161,25 +161,22 @@ impl OmikronConnection {
             ACTIVE_TASKS.lock().unwrap().push("Listener".to_string());
         }
         tokio::spawn(async move {
-            while !*SHUTDOWN.read().await {
-                if poll(Duration::from_millis(100)).unwrap() {
-                    if let Some(msg) = read_half.next().await {
-                        if *is_connected_out.lock().await == false {
-                            log_message("Disconnected, not handeling incomming");
-                            break;
-                        }
-                        Self::handle_message(
-                            msg,
-                            waiting_out.clone(),
-                            writer_out.clone(),
-                            is_connected_out.clone(),
-                            sel_out.clone(),
-                            variant.clone(),
-                            sel_arc_out.clone(),
-                        );
-                    }
+            while let Some(msg) = read_half.next().await {
+                if *SHUTDOWN.read().await {
+                    break;
                 }
+                Self::handle_message(
+                    msg,
+                    waiting_out.clone(),
+                    writer_out.clone(),
+                    is_connected_out.clone(),
+                    sel_out.clone(),
+                    variant.clone(),
+                    sel_arc_out.clone(),
+                );
             }
+            *is_connected_out.lock().await = false;
+            log_message("Connection closed.");
         });
         {
             ACTIVE_TASKS
