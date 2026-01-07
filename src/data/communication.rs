@@ -16,6 +16,7 @@ pub enum DataTypes {
     iota_id,
     user_id,
     user_ids,
+    iota_ids,
     user_state,
     user_states,
     user_pings,
@@ -36,6 +37,8 @@ pub enum DataTypes {
     shared_secret,
     call_id,
     call_token,
+    untill,
+    enable,
     start_date,
     end_date,
     receiver_id,
@@ -73,8 +76,11 @@ pub enum DataTypes {
     challenge,
     community_title,
     communities,
-
+    rho_connections,
     user,
+    online_status,
+    omikron_id,
+    omikron_connections,
 }
 
 impl DataTypes {
@@ -90,6 +96,7 @@ impl DataTypes {
             "iotaid" => DataTypes::iota_id,
             "userid" => DataTypes::user_id,
             "userids" => DataTypes::user_ids,
+            "iotaids" => DataTypes::iota_ids,
             "userstate" => DataTypes::user_state,
             "userstates" => DataTypes::user_states,
             "userpings" => DataTypes::user_pings,
@@ -110,6 +117,8 @@ impl DataTypes {
             "sharedsecret" => DataTypes::shared_secret,
             "callid" => DataTypes::call_id,
             "calltoken" => DataTypes::call_token,
+            "untill" => DataTypes::untill,
+            "enable" => DataTypes::enable,
             "startdate" => DataTypes::start_date,
             "enddate" => DataTypes::end_date,
             "receiverid" => DataTypes::receiver_id,
@@ -147,8 +156,11 @@ impl DataTypes {
             "challenge" => DataTypes::challenge,
             "communitytitle" => DataTypes::community_title,
             "communities" => DataTypes::communities,
-
+            "rhoconnections" => DataTypes::rho_connections,
             "user" => DataTypes::user,
+            "onlinestatus" => DataTypes::online_status,
+            "omikronid" => DataTypes::omikron_id,
+            "omikronconnections" => DataTypes::omikron_connections,
             _ => DataTypes::error_type, // fallback if unknown
         }
     }
@@ -159,11 +171,14 @@ impl DataTypes {
 pub enum CommunicationType {
     error,
     error_invalid_user_id,
+    error_invalid_omikron_id,
     error_not_found,
+    error_not_authenticated,
     error_no_iota,
     error_invalid_challenge,
     error_invalid_secret,
     error_invalid_private_key,
+    error_invalid_public_key,
     error_no_user_id,
     error_no_call_id,
     error_invalid_call_id,
@@ -195,8 +210,6 @@ pub enum CommunicationType {
     pong,
     add_chat,
     send_chat,
-    iota_connected,
-    iota_closed,
     client_changed,
     client_connected,
     client_disconnected,
@@ -210,10 +223,29 @@ pub enum CommunicationType {
     watch_stream,
     call_token,
     call_invite,
+    call_disconnect_user,
+    call_timeout_user,
+    call_set_anonymous_joining,
     end_call,
     function,
     update,
     create_user,
+    rho_update,
+
+    user_connected,
+    user_disconnected,
+    iota_connected,
+    iota_disconnected,
+    sync_client_iota_status,
+
+    get_user_data,
+    get_iota_data,
+
+    change_user_data,
+    change_iota_data,
+
+    start_register,
+    complete_register,
 }
 impl CommunicationType {
     pub fn parse(p0: String) -> CommunicationType {
@@ -223,14 +255,20 @@ impl CommunicationType {
             "watchstream" => CommunicationType::watch_stream,
             "calltoken" => CommunicationType::call_token,
             "callinvite" => CommunicationType::call_invite,
+            "calldisconnectuser" => CommunicationType::call_disconnect_user,
+            "calltimeoutuser" => CommunicationType::call_timeout_user,
+            "callsetanonymousjoining" => CommunicationType::call_set_anonymous_joining,
             "endcall" => CommunicationType::end_call,
             "function" => CommunicationType::function,
             "update" => CommunicationType::update,
             "createuser" => CommunicationType::create_user,
             "errorinvaliduserid" => CommunicationType::error_invalid_user_id,
+            "errorinvalidomikronid" => CommunicationType::error_invalid_omikron_id,
             "errornotfound" => CommunicationType::error_not_found,
+            "errornotauthenticated" => CommunicationType::error_not_authenticated,
             "errornoiota" => CommunicationType::error_no_iota,
             "errorinvalidchallenge" => CommunicationType::error_invalid_challenge,
+            "errorinvalidpublickey" => CommunicationType::error_invalid_public_key,
             "errorinvalidsecret" => CommunicationType::error_invalid_secret,
             "errorinvalidprivatekey" => CommunicationType::error_invalid_private_key,
             "errornouserid" => CommunicationType::error_no_user_id,
@@ -243,7 +281,7 @@ impl CommunicationType {
             "message" => CommunicationType::message,
             "messagesend" => CommunicationType::message_send,
             "messagelive" => CommunicationType::message_live,
-            "messageother_iota" => CommunicationType::message_other_iota,
+            "messageotheriota" => CommunicationType::message_other_iota,
             "messagechunk" => CommunicationType::message_chunk,
             "messagesget" => CommunicationType::messages_get,
             "changeconfirm" => CommunicationType::change_confirm,
@@ -264,8 +302,6 @@ impl CommunicationType {
             "pong" => CommunicationType::pong,
             "addchat" => CommunicationType::add_chat,
             "sendchat" => CommunicationType::send_chat,
-            "iotaconnected" => CommunicationType::iota_connected,
-            "iotaclosed" => CommunicationType::iota_closed,
             "clientchanged" => CommunicationType::client_changed,
             "clientconnected" => CommunicationType::client_connected,
             "clientdisconnected" => CommunicationType::client_disconnected,
@@ -276,6 +312,22 @@ impl CommunicationType {
             "webrtcice" => CommunicationType::webrtc_ice,
             "startstream" => CommunicationType::start_stream,
             "endstream" => CommunicationType::end_stream,
+            "rhoupdate" => CommunicationType::rho_update,
+
+            "iotaconnected" => CommunicationType::iota_connected,
+            "iotadisconnected" => CommunicationType::iota_disconnected,
+            "userconnected" => CommunicationType::user_connected,
+            "userdisconnected" => CommunicationType::user_disconnected,
+            "syncclientiotastatus" => CommunicationType::sync_client_iota_status,
+
+            "getuserdata" => CommunicationType::get_user_data,
+            "getiotadata" => CommunicationType::get_iota_data,
+
+            "changeuserdata" => CommunicationType::change_user_data,
+            "changeiotadata" => CommunicationType::change_iota_data,
+
+            "startregister" => CommunicationType::start_register,
+            "completeregister" => CommunicationType::complete_register,
 
             _ => CommunicationType::error,
         }
