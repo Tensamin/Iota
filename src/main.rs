@@ -75,9 +75,7 @@ async fn main() {
             CONFIG.write().await.change(
                 "iota_id",
                 JsonValue::Number(Number::from(
-                    SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap()
+                    .unwrap_or(Duration::from_millis(0))
                         .as_millis() as i64,
                 )),
             );
@@ -124,9 +122,7 @@ async fn main() {
         let mut ip = "0.0.0.0".to_string();
         for iface in pnet::datalink::interfaces() {
             let iface: NetworkInterface = iface;
-            if iface.ips.len() > 0 {
-                let ipsv = format!("{}", iface.ips[0]);
-                let ips: &str = ipsv.split('/').next().unwrap();
+            let ips: &str = ipsv.split('/').next().unwrap_or("");
                 if format!("{}", ips).starts_with("10.") || format!("{}", ips).starts_with("192.") {
                     ip = ips.to_string();
                 }

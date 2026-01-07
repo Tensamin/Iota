@@ -38,10 +38,8 @@ pub enum ConnectionVariant {
 pub struct OmikronConnection {
     pub variant: Arc<RwLock<ConnectionVariant>>,
     pub user_id: Arc<RwLock<i64>>,
-    pub(crate) writer:
-        Arc<Mutex<Option<Box<dyn Sink<Message, Error = tungstenite::Error> + Send + Unpin>>>>,
-    waiting: Arc<Mutex<HashMap<Uuid, Box<dyn Fn(CommunicationValue) + Send + Sync>>>>, // waiting for responses
-    pingpong: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>, // ping-pong handler
+    waiting: Arc<Mutex<HashMap<Uuid, Box<dyn Fn(CommunicationValue) + Send + Sync>>>>,
+    pingpong: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
     pub last_ping: Arc<Mutex<i64>>,
     pub message_send_times: Arc<Mutex<HashMap<Uuid, Instant>>>,
     pub is_connected: Arc<Mutex<bool>>,
@@ -71,9 +69,7 @@ impl OmikronConnection {
                 as Box<dyn Sink<Message, Error = tungstenite::Error> + Send + Unpin>))),
             waiting: Arc::new(Mutex::new(HashMap::new())),
             pingpong: Arc::new(Mutex::new(None)),
-            last_ping: Arc::new(Mutex::new(-1)),
-            message_send_times: Arc::new(Mutex::new(HashMap::new())),
-            is_connected: Arc::new(Mutex::new(false)),
+            is_connected: Arc::new(Mutex::new(true)),
         });
         let boxed_reader: Box<
             dyn Stream<Item = Result<Message, tungstenite::Error>> + Send + Unpin,
@@ -159,27 +155,22 @@ impl OmikronConnection {
 
         {
             ACTIVE_TASKS.lock().unwrap().push("Listener".to_string());
-        }
-        tokio::spawn(async move {
-            while !*SHUTDOWN.read().await {
-                if poll(Duration::from_millis(100)).unwrap() {
-                    if let Some(msg) = read_half.next().await {
-                        if *is_connected_out.lock().await == false {
-                            log_message("Disconnected, not handeling incomming");
-                            break;
-                        }
-                        Self::handle_message(
-                            msg,
-                            waiting_out.clone(),
-                            writer_out.clone(),
-                            is_connected_out.clone(),
-                            sel_out.clone(),
-                            variant.clone(),
-                            sel_arc_out.clone(),
-                        );
-                    }
+            while let Some(msg) = read_half.next().await {
+                if *SHUTDOWN.read().await {
+                    break;
                 }
+                Self::handle_message(
+                    msg,
+                    waiting_out.clone(),
+                    writer_out.clone(),
+                    is_connected_out.clone(),
+                    sel_out.clone(),
+                    variant.clone(),
+                    sel_arc_out.clone(),
+                );
             }
+            *is_connected_out.lock().await = false;
+            log_message("Connection closed.");
         });
         {
             ACTIVE_TASKS
@@ -344,19 +335,20 @@ impl OmikronConnection {
                         let other_id = cv
                             .get_data(DataTypes::receiver_id)
                             .unwrap_or(&JsonValue::Null)
-                            .as_i64()
-                            .unwrap_or(0);
+                        let now_ms = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap()
+                            .as_millis() as u128;
+
                         chat_files::add_message(
-                            SystemTime::now()
-                                .duration_since(UNIX_EPOCH)
-                                .unwrap()
-                                .as_millis() as u128,
+                            now_ms,
                             true,
                             my_id,
                             other_id,
                             &*cv.get_data(DataTypes::content).unwrap().to_string(),
                         );
-                        let ack = CommunicationValue::new(CommunicationType::message)
+
+                        let ack = CommunicationValue::new(CommunicationType::success)
                             .with_id(cv.get_id())
                             .with_receiver(my_id);
                         Self::send_message_static(
@@ -365,10 +357,31 @@ impl OmikronConnection {
                             ack.to_json().to_string(),
                         )
                         .await;
-                        let forward = CommunicationValue::forward_to_other_iota(&mut cv);
-                        Self::send_message_static(
-                            &writer.clone(),
-                            is_connected,
+
+                        let forward =
+                            CommunicationValue::new(CommunicationType::message_other_iota)
+                                .with_id(cv.get_id())
+                                .with_receiver(other_id)
+                                .add_data(
+                                    DataTypes::receiver_id,
+                                    JsonValue::Number(Number::from(other_id)),
+                                )
+                                .with_sender(my_id)
+                                .add_data(
+                                    DataTypes::send_time,
+                                    JsonValue::String(now_ms.to_string()),
+                                )
+                                .add_data(
+                                    DataTypes::sender_id,
+                                    JsonValue::Number(Number::from(my_id)),
+                                )
+                                .add_data(
+                                    DataTypes::content,
+                                    JsonValue::String(
+                                        cv.get_data(DataTypes::content).unwrap().to_string(),
+                                    ),
+                                );
+
                             forward.to_json().to_string(),
                         )
                         .await;
