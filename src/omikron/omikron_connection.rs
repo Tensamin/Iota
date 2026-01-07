@@ -15,7 +15,6 @@ use hyper::upgrade::Upgraded;
 use hyper_util::rt::TokioIo;
 use json::JsonValue;
 use json::number::Number;
-use ratatui::crossterm::event::poll;
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -38,6 +37,8 @@ pub enum ConnectionVariant {
 pub struct OmikronConnection {
     pub variant: Arc<RwLock<ConnectionVariant>>,
     pub user_id: Arc<RwLock<i64>>,
+    pub(crate) writer:
+        Arc<Mutex<Option<Box<dyn Sink<Message, Error = tungstenite::Error> + Send + Unpin>>>>,
     waiting: Arc<Mutex<HashMap<Uuid, Box<dyn Fn(CommunicationValue) + Send + Sync>>>>,
     pingpong: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
     pub last_ping: Arc<Mutex<i64>>,
@@ -69,6 +70,8 @@ impl OmikronConnection {
                 as Box<dyn Sink<Message, Error = tungstenite::Error> + Send + Unpin>))),
             waiting: Arc::new(Mutex::new(HashMap::new())),
             pingpong: Arc::new(Mutex::new(None)),
+            last_ping: Arc::new(Mutex::new(-1)),
+            message_send_times: Arc::new(Mutex::new(HashMap::new())),
             is_connected: Arc::new(Mutex::new(true)),
         });
         let boxed_reader: Box<
@@ -155,6 +158,8 @@ impl OmikronConnection {
 
         {
             ACTIVE_TASKS.lock().unwrap().push("Listener".to_string());
+        }
+        tokio::spawn(async move {
             while let Some(msg) = read_half.next().await {
                 if *SHUTDOWN.read().await {
                     break;
@@ -335,6 +340,8 @@ impl OmikronConnection {
                         let other_id = cv
                             .get_data(DataTypes::receiver_id)
                             .unwrap_or(&JsonValue::Null)
+                            .as_i64()
+                            .unwrap_or(0);
                         let now_ms = SystemTime::now()
                             .duration_since(UNIX_EPOCH)
                             .unwrap()
@@ -381,7 +388,9 @@ impl OmikronConnection {
                                         cv.get_data(DataTypes::content).unwrap().to_string(),
                                     ),
                                 );
-
+                        Self::send_message_static(
+                            &writer.clone(),
+                            is_connected,
                             forward.to_json().to_string(),
                         )
                         .await;
