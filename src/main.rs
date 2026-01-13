@@ -71,18 +71,6 @@ async fn main() {
 
         // BASIC CONFIGURATION
         &CONFIG.write().await.load();
-        if !CONFIG.read().await.config.has_key("iota_id") {
-            CONFIG.write().await.change(
-                "iota_id",
-                JsonValue::Number(Number::from(
-                    SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap_or(Duration::from_millis(0))
-                        .as_millis() as i64,
-                )),
-            );
-            CONFIG.write().await.update();
-        }
 
         // USER MANAGEMENT
         if let Err(_) = user_manager::load_users().await {
@@ -153,21 +141,7 @@ async fn main() {
                 break;
             }
             let omikron: Arc<OmikronConnection> = Arc::new(OmikronConnection::new());
-            omikron.connect().await;
-            omikron
-                .send_message(
-                    CommunicationValue::new(CommunicationType::identification)
-                        .add_data(DataTypes::user_ids, JsonValue::String(sb.to_string()))
-                        .add_data(
-                            DataTypes::iota_id,
-                            JsonValue::Number(Number::from(CONFIG.read().await.get_iota_id())),
-                        )
-                        .to_json()
-                        .to_string()
-                        .as_mut()
-                        .to_string(),
-                )
-                .await;
+            omikron.connect(sb.clone()).await;
             let mut omikron_connection = OMIKRON_CONNECTION.write().await;
             *omikron_connection = Some(omikron.clone());
             log_message_trans("setup_completed");

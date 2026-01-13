@@ -10,6 +10,7 @@ pub enum DataTypes {
     error_type,
     accepted_ids,
     uuid,
+    register_id,
     settings,
     settings_name,
     chat_partner_id,
@@ -81,6 +82,8 @@ pub enum DataTypes {
     online_status,
     omikron_id,
     omikron_connections,
+    reset_token,
+    new_token,
 }
 
 impl DataTypes {
@@ -90,6 +93,7 @@ impl DataTypes {
         match normalized.as_str() {
             "errortype" => DataTypes::error_type,
             "chatpartnerid" => DataTypes::chat_partner_id,
+            "registerid" => DataTypes::register_id,
             "uuid" => DataTypes::uuid,
             "settings" => DataTypes::settings,
             "settingsname" => DataTypes::settings_name,
@@ -161,6 +165,8 @@ impl DataTypes {
             "onlinestatus" => DataTypes::online_status,
             "omikronid" => DataTypes::omikron_id,
             "omikronconnections" => DataTypes::omikron_connections,
+            "resettoken" => DataTypes::reset_token,
+            "newtoken" => DataTypes::new_token,
             _ => DataTypes::error_type, // fallback if unknown
         }
     }
@@ -170,6 +176,8 @@ impl DataTypes {
 #[allow(non_camel_case_types, dead_code)]
 pub enum CommunicationType {
     error,
+    error_internal,
+    error_invalid_data,
     error_invalid_user_id,
     error_invalid_omikron_id,
     error_not_found,
@@ -206,6 +214,8 @@ pub enum CommunicationType {
     register_response,
     identification,
     identification_response,
+    register_iota,
+    register_iota_success,
     ping,
     pong,
     add_chat,
@@ -244,6 +254,12 @@ pub enum CommunicationType {
     change_user_data,
     change_iota_data,
 
+    get_register,
+    complete_register_user,
+    complete_register_iota,
+    delete_user,
+    delete_iota,
+
     start_register,
     complete_register,
 }
@@ -262,6 +278,8 @@ impl CommunicationType {
             "function" => CommunicationType::function,
             "update" => CommunicationType::update,
             "createuser" => CommunicationType::create_user,
+            "errorinternal" => CommunicationType::error_internal,
+            "errorinvaliddata" => CommunicationType::error_invalid_data,
             "errorinvaliduserid" => CommunicationType::error_invalid_user_id,
             "errorinvalidomikronid" => CommunicationType::error_invalid_omikron_id,
             "errornotfound" => CommunicationType::error_not_found,
@@ -298,6 +316,8 @@ impl CommunicationType {
             "registerresponse" => CommunicationType::register_response,
             "identification" => CommunicationType::identification,
             "identificationresponse" => CommunicationType::identification_response,
+            "registeriota" => CommunicationType::register_iota,
+            "registeriotasuccess" => CommunicationType::register_iota_success,
             "ping" => CommunicationType::ping,
             "pong" => CommunicationType::pong,
             "addchat" => CommunicationType::add_chat,
@@ -325,6 +345,12 @@ impl CommunicationType {
 
             "changeuserdata" => CommunicationType::change_user_data,
             "changeiotadata" => CommunicationType::change_iota_data,
+
+            "getregister" => CommunicationType::get_register,
+            "completeregisteruser" => CommunicationType::complete_register_user,
+            "completeregisteriota" => CommunicationType::complete_register_iota,
+            "deleteuser" => CommunicationType::delete_user,
+            "deleteiota" => CommunicationType::delete_iota,
 
             "startregister" => CommunicationType::start_register,
             "completeregister" => CommunicationType::complete_register,

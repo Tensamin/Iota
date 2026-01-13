@@ -1,6 +1,5 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::auth::auth_connector;
 use crate::gui::log_panel::log_message;
 use crate::users::user_manager;
 use crate::util::file_util::{has_file, load_file, used_dir_space};
@@ -95,7 +94,8 @@ impl UserProfile {
             reset_token,
         };
 
-        if j.has_key("migrate")
+        // TODO: Migrate to Omikron / Wss
+        /* if j.has_key("migrate")
             || j.has_key("migrating")
             || j.has_key("changing")
             || j.has_key("move")
@@ -105,7 +105,7 @@ impl UserProfile {
                 log_message(format!("[INFO] Migration triggered for {}", up.username));
                 user_manager::set_unique(true);
             }
-        }
+        } */
 
         Some(up)
     }

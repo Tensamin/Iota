@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use crate::auth::auth_connector::unregister_user;
 use crate::communities::community::Community;
 use crate::data::communication::{CommunicationType, CommunicationValue, DataTypes};
 use crate::gui::log_panel::log_message;
@@ -108,11 +107,12 @@ pub async fn handle(
                                 "{\"type\":\"error\"}".to_string()
                             } else {
                                 let uuid = body.unwrap()["uuid"].as_i64().unwrap_or(0);
-                                unregister_user(
+                                // TODO MOVE TO OMIKRON CONNECTION
+                                /*unregister_user(
                                     uuid,
                                     &user_manager::get_user(uuid).unwrap().reset_token,
                                 )
-                                .await;
+                                .await;*/
                                 user_manager::remove_user(uuid);
                                 user_manager::save_users();
                                 "{}".to_string()

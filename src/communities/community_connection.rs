@@ -1,8 +1,8 @@
-use crate::auth::auth_connector::AuthUser;
-use crate::auth::auth_connector::get_user;
+use crate::auth::auth_user::AuthUser;
 use crate::communities::community::Community;
 use crate::communities::interactables::interactable::Interactable;
 use crate::data::communication::{CommunicationType, CommunicationValue, DataTypes};
+use crate::users::user_manager::get_user;
 use aes_gcm::{Aes256Gcm, KeyInit, Nonce, aead::Aead};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use futures::SinkExt;
@@ -121,7 +121,7 @@ impl CommunityConnection {
             .as_i64()
             .unwrap_or(0);
 
-        let Some(user) = get_user(user_id).await else {
+        let Some(user) = get_user(user_id) else {
             self.send_error_response(&cv.get_id(), CommunicationType::error_invalid_user_id)
                 .await;
             return;
@@ -129,7 +129,7 @@ impl CommunityConnection {
 
         {
             let mut auth_guard = self.auth.write().await;
-            *auth_guard = Some(user.clone());
+            //*auth_guard = Some(user.clone());
 
             let mut user_id_guard = self.user_id.write().await;
             *user_id_guard = user_id;

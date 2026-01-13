@@ -7,7 +7,7 @@ use rand_core::RngCore;
 use sha2::{Digest, Sha256};
 use x448::{PublicKey, Secret, SharedSecret};
 
-/// Errors for crypto operations
+/// Errors for crypto opertions
 #[derive(Debug)]
 pub enum CryptoError {
     Base64Decode(base64::DecodeError),

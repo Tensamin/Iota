@@ -1,7 +1,7 @@
 use json::JsonValue;
 
 use crate::util::file_util::load_file;
-
+// NOT USED AT MOMENT
 pub fn is_private_key_valid(user_id: &i64, key_hash: &str) -> bool {
     let file_contents = load_file("", "users.json");
 

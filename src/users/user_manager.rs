@@ -1,19 +1,23 @@
-use crate::auth::{auth_connector, crypto_helper};
+use crate::data::communication::{CommunicationType, CommunicationValue, DataTypes};
 use crate::gui::log_panel::log_message;
+use crate::omikron::omikron_connection::{OMIKRON_CONNECTION, OmikronConnection};
 use crate::users::user_profile::UserProfile;
 use crate::util::config_util::CONFIG;
+use crate::util::crypto_helper::{self, public_key_to_base64};
 use crate::util::file_util::{load_file, save_file};
 use crate::{RELOAD, SHUTDOWN};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use hex::{self};
 use json::JsonValue;
+use json::number::Number;
 use once_cell::sync::Lazy;
 use rand::Rng;
 use rand_core::OsRng;
 use rand_core::RngCore;
 use sha2::{Digest, Sha256};
 use std::io::{self};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use x448::{PublicKey, Secret};
 
 static USERS: Lazy<Mutex<Vec<UserProfile>>> = Lazy::new(|| Mutex::new(Vec::new()));
@@ -45,7 +49,25 @@ pub async fn load_from_tu(username: &str) -> Result<(), ()> {
     Ok(())
 }
 pub async fn create_user(username: &str) -> (Option<UserProfile>, Option<String>) {
-    let user_id = auth_connector::get_register().await.unwrap();
+    let omikron_con: Arc<OmikronConnection> =
+        OMIKRON_CONNECTION.read().await.as_ref().unwrap().clone();
+    let register_cv = if let Ok(register_cv) = omikron_con
+        .clone()
+        .await_response(
+            &CommunicationValue::new(CommunicationType::get_register),
+            Some(Duration::from_secs(20)),
+        )
+        .await
+    {
+        register_cv
+    } else {
+        return (None, None);
+    };
+    let user_id = register_cv
+        .get_data(DataTypes::register_id)
+        .unwrap_or(&JsonValue::Null)
+        .as_i64()
+        .unwrap_or(0);
     let mut buf = [0u8; 56];
     let mut rng = OsRng;
     rng.fill_bytes(&mut buf);
@@ -67,10 +89,31 @@ pub async fn create_user(username: &str) -> (Option<UserProfile>, Option<String>
         None,
         STANDARD.encode(&public_key.as_bytes()),
         private_key_hash,
-        reset_token,
+        reset_token.clone(),
     );
 
-    auth_connector::complete_register(&up, &CONFIG.read().await.get_iota_id().to_string()).await;
+    let cv = CommunicationValue::new(CommunicationType::complete_register_user)
+        .add_data(DataTypes::user_id, JsonValue::Number(Number::from(user_id)))
+        .add_data(DataTypes::username, JsonValue::String(username.to_string()))
+        .add_data(
+            DataTypes::public_key,
+            JsonValue::String(public_key_to_base64(&public_key)),
+        )
+        .add_data(DataTypes::iota_id, JsonValue::Number(Number::from(user_id)))
+        .add_data(DataTypes::reset_token, JsonValue::String(reset_token));
+
+    let response_cv = omikron_con
+        .await_response(&cv, Some(Duration::from_secs(20)))
+        .await;
+    if let Ok(resp) = response_cv {
+        if !resp.is_type(CommunicationType::success) {
+            return (None, None);
+        }
+    } else {
+        return (None, None);
+    }
+    // auth_connector::complete_register(&up, &CONFIG.read().await.get_iota_id().to_string()).await;
+    //
     *SHUTDOWN.write().await = true;
     *RELOAD.write().await = true;
     log_message("Created User");
