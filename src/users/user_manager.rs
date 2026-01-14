@@ -2,7 +2,6 @@ use crate::data::communication::{CommunicationType, CommunicationValue, DataType
 use crate::gui::log_panel::log_message;
 use crate::omikron::omikron_connection::{OMIKRON_CONNECTION, OmikronConnection};
 use crate::users::user_profile::UserProfile;
-use crate::util::config_util::CONFIG;
 use crate::util::crypto_helper::{self, public_key_to_base64};
 use crate::util::file_util::{load_file, save_file};
 use crate::{RELOAD, SHUTDOWN};
@@ -112,8 +111,6 @@ pub async fn create_user(username: &str) -> (Option<UserProfile>, Option<String>
     } else {
         return (None, None);
     }
-    // auth_connector::complete_register(&up, &CONFIG.read().await.get_iota_id().to_string()).await;
-    //
     *SHUTDOWN.write().await = true;
     *RELOAD.write().await = true;
     log_message("Created User");

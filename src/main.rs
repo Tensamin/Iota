@@ -1,12 +1,9 @@
-use json::JsonValue;
-use json::number::Number;
 use json::{self};
 use once_cell::sync::Lazy;
 use pnet::datalink::NetworkInterface;
 use std::sync::Arc;
 use std::sync::LazyLock;
 use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
 use tokio::time::{Duration, sleep};
 
@@ -31,8 +28,7 @@ use crate::gui::log_panel::{log_message, log_message_trans};
 use crate::gui::tui;
 use crate::langu::language_creator;
 use crate::langu::language_manager::format;
-use crate::omikron::omikron_connection::OMIKRON_CONNECTION;
-use crate::omikron::omikron_connection::OmikronConnection;
+use crate::omikron::omikron_connection::{OMIKRON_CONNECTION, OmikronConnection};
 use crate::server::server::start;
 use crate::users::user_manager;
 use crate::util::config_util::CONFIG;

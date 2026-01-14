@@ -1,18 +1,16 @@
 use crate::auth::local_auth;
 use crate::gui::log_panel::{log_cv, log_message_format};
-use crate::{
-    data::communication::{CommunicationType, CommunicationValue, DataTypes},
-    gui::log_panel::{log_message, log_message_trans},
-    util::{config_util::CONFIG, crypto_helper},
-};
-use json::JsonValue;
-
 use crate::users::contact::Contact;
 use crate::users::user_community_util::UserCommunityUtil;
 use crate::util::chats_util::{get_user, mod_user};
 use crate::util::file_util::{get_children, load_file, save_file};
 use crate::util::{chat_files, chats_util};
 use crate::{ACTIVE_TASKS, SHUTDOWN};
+use crate::{
+    data::communication::{CommunicationType, CommunicationValue, DataTypes},
+    gui::log_panel::{log_message, log_message_trans},
+    util::{config_util::CONFIG, crypto_helper},
+};
 use dashmap::DashMap;
 use futures::Stream;
 use futures::stream::{SplitSink, SplitStream};
@@ -20,6 +18,7 @@ use futures_util::sink::Sink;
 use futures_util::{SinkExt, StreamExt};
 use hyper::upgrade::Upgraded;
 use hyper_util::rt::TokioIo;
+use json::JsonValue;
 use json::number::Number;
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
@@ -101,10 +100,10 @@ impl OmikronConnection {
         let iota_id = conf.get_iota_id();
         let public_key = conf.get_public_key();
         let private_key = conf.get_private_key();
+        drop(conf); // release read lock
 
         if iota_id == 0 || public_key.is_none() || private_key.is_none() {
             // Registration flow
-            drop(conf); // release read lock
             log_message_trans("iota_register_new");
             let key_pair = crypto_helper::generate_keypair();
             let public_key_base64 = crypto_helper::public_key_to_base64(&key_pair.public);
@@ -118,13 +117,31 @@ impl OmikronConnection {
 
             if self.connect_internal().await {
                 // a new helper function to just connect
-                self.send_message(
-                    CommunicationValue::new(CommunicationType::register_iota)
-                        .add_data(DataTypes::public_key, JsonValue::String(public_key_base64))
-                        .to_json()
-                        .to_string(),
-                )
-                .await;
+                match self
+                    .clone()
+                    .await_response(
+                        &CommunicationValue::new(CommunicationType::register_iota)
+                            .add_data(DataTypes::public_key, JsonValue::String(public_key_base64)),
+                        Some(Duration::from_secs(20)),
+                    )
+                    .await
+                {
+                    Ok(response_cv) => {
+                        let iota_json = response_cv
+                            .get_data(DataTypes::register_id)
+                            .unwrap_or(&JsonValue::Null);
+                        let iota_id = iota_json.as_i64().unwrap_or(0);
+
+                        let mut conf_write = CONFIG.write().await;
+                        conf_write.change("iota_id", iota_json.clone());
+                        conf_write.update();
+                        drop(conf_write);
+                        log_message(format!("Registered with Iota-ID: {}", iota_id));
+                    }
+                    Err(timeout) => {
+                        log_message(timeout);
+                    }
+                }
             }
         } else {
             // Login flow
@@ -157,7 +174,7 @@ impl OmikronConnection {
             .unwrap_or("wss://app.tensamin.net/ws/iota/");
         let stream_res = connect_async(addr).await;
         if let Err(e) = stream_res {
-            log_message(format!("omikron_connection_error {}", e.to_string()));
+            log_message(format!("con error {}", e.to_string()));
             return false;
         }
         let (stream, _) = stream_res.unwrap();
@@ -298,10 +315,10 @@ impl OmikronConnection {
 
                         return;
                     }
-                    if cv.is_type(CommunicationType::register_iota_success) {
+                    if cv.is_type(CommunicationType::success) {
                         let iota_id = cv
                             .get_data(DataTypes::iota_id)
-                            .unwrap()
+                            .unwrap_or(&JsonValue::Null)
                             .as_i64()
                             .unwrap_or(0);
                         if iota_id != 0 {
