@@ -20,7 +20,6 @@ mod util;
 
 use crate::communities::community_manager;
 use crate::communities::interactables::registry;
-use crate::data::communication::{CommunicationType, CommunicationValue, DataTypes};
 use crate::gui::app_state::AppState;
 use crate::gui::input_handler;
 use crate::gui::log_panel;

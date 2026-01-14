@@ -352,7 +352,6 @@ impl OmikronConnection {
                                 log_message(format!("Omikron connected: {}", accepted.to_string()));
                             } else {
                                 log_message("omikron_connection_failed");
-                                // Maybe add a retry logic here or close the app
                             }
                         }
                         return;
