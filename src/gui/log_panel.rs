@@ -15,7 +15,7 @@ pub fn log_cv(cv: &CommunicationValue) {
         let args = [cv.get_data(DataTypes::accepted).unwrap().as_str().unwrap()];
         log_message(format(&"identification_response", &args));
     } else {
-        log_message_trans(format!("{:?}", &cv.comm_type));
+        log_message_trans(format!("{:?}", &cv.get_type()));
     }
     tokio::spawn(async move {
         *UNIQUE.write().await = true;

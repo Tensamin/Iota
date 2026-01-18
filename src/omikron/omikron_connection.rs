@@ -348,11 +348,7 @@ impl OmikronConnection {
                     }
                     if cv.is_type(CommunicationType::identification_response) {
                         if let Some(accepted) = cv.get_data(DataTypes::accepted) {
-                            if accepted.as_str().unwrap_or("0") != "0" {
-                                log_message(format!("Omikron connected: {}", accepted.to_string()));
-                            } else {
-                                log_message("omikron_connection_failed");
-                            }
+                            log_message(format!("Omikron connected: {}", accepted.to_string()));
                         }
                         return;
                     }
