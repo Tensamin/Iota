@@ -3,6 +3,7 @@ use crate::gui::log_panel::{log_cv, log_message_format};
 use crate::users::contact::Contact;
 use crate::users::user_community_util::UserCommunityUtil;
 use crate::util::chats_util::{get_user, mod_user};
+use crate::util::crypto_util::{DataFormat, SecurePayload};
 use crate::util::file_util::{get_children, load_file, save_file};
 use crate::util::{chat_files, chats_util};
 use crate::{ACTIVE_TASKS, SHUTDOWN};
@@ -296,17 +297,32 @@ impl OmikronConnection {
                         let encrypted_challenge =
                             cv.get_data(DataTypes::challenge).unwrap().as_str().unwrap();
 
-                        let solved_challenge = crypto_helper::decrypt(
-                            &private_key,
-                            omikron_public_key,
-                            encrypted_challenge,
-                        );
+                        let solved_challenge = {
+                            if let Ok(decrypted) = SecurePayload::new(
+                                encrypted_challenge,
+                                DataFormat::Base64,
+                                crypto_helper::load_secret_key(&private_key).unwrap(),
+                            ) {
+                                if let Ok(decrypted) = decrypted.decrypt_x448(
+                                    crypto_helper::load_public_key(omikron_public_key).unwrap(),
+                                ) {
+                                    Some(decrypted)
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
+                        };
 
-                        if let Ok(decrypted) = solved_challenge {
+                        if let Some(decrypted) = solved_challenge {
                             let response =
                                 CommunicationValue::new(CommunicationType::challenge_response)
                                     .with_id(cv.get_id())
-                                    .add_data(DataTypes::challenge, JsonValue::String(decrypted));
+                                    .add_data(
+                                        DataTypes::challenge,
+                                        JsonValue::String(decrypted.export(DataFormat::Base64)),
+                                    );
 
                             sel_arc.send_message(response.to_json().to_string()).await;
                         } else {
@@ -590,7 +606,7 @@ impl OmikronConnection {
                         return;
                     }
 
-                    if cv.is_type(CommunicationType::add_chat) {
+                    if cv.is_type(CommunicationType::add_conversation) {
                         let user_id = cv.get_sender();
                         let other_id = cv
                             .get_data(DataTypes::user_id)
@@ -606,7 +622,7 @@ impl OmikronConnection {
                                 .as_millis() as i64,
                         );
                         mod_user(user_id, &contact);
-                        let resp = CommunicationValue::new(CommunicationType::add_chat)
+                        let resp = CommunicationValue::new(CommunicationType::add_conversation)
                             .with_id(cv.get_id())
                             .with_receiver(user_id);
                         Self::send_message_static(

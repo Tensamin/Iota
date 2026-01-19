@@ -237,7 +237,7 @@ impl Community {
                 }
             }
         }
-        CommunicationValue::new(CommunicationType::add_chat)
+        CommunicationValue::new(CommunicationType::add_conversation)
     }
 
     pub async fn save(&self) {
