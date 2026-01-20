@@ -1,10 +1,8 @@
 use std::sync::Arc;
-use std::time::Duration;
 
 use crate::communities::community::Community;
 use crate::data::communication::{CommunicationType, CommunicationValue, DataTypes};
 use crate::gui::log_panel::log_message;
-use crate::omikron::omikron_connection::OMIKRON_CONNECTION;
 use crate::util::file_util::delete_file;
 use crate::{RELOAD, SHUTDOWN};
 use axum::http::HeaderValue;
