@@ -609,7 +609,7 @@ impl OmikronConnection {
                     if cv.is_type(CommunicationType::add_conversation) {
                         let user_id = cv.get_sender();
                         let other_id = cv
-                            .get_data(DataTypes::user_id)
+                            .get_data(DataTypes::chat_partner_id)
                             .unwrap_or(&JsonValue::Null)
                             .as_i64()
                             .unwrap_or(0);
