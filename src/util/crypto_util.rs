@@ -109,11 +109,6 @@ impl SecurePayload {
         let peer_pub = public_key.into();
         let shared_secret = self.private_key.as_diffie_hellman(&peer_pub).unwrap();
 
-        println!(
-            "Encryption Shared Secret (Hex): {}",
-            hex::encode(shared_secret.as_bytes())
-        );
-
         // 3. Key & Nonce Derivation (HKDF)
         // We derive 32 bytes for the key and 12 bytes for a deterministic nonce.
         let hkdf = Hkdf::<Sha256>::new(None, shared_secret.as_bytes());
@@ -167,12 +162,6 @@ impl SecurePayload {
         // 1. Perform Exchange
         let peer_pub = peer_public_key_bytes.into();
         let shared_secret = self.private_key.as_diffie_hellman(&peer_pub).unwrap();
-
-        // LOGGING: Shared Secret
-        println!(
-            "Decryption Shared Secret (Hex): {}",
-            hex::encode(shared_secret.as_bytes())
-        );
 
         // 2. Key & Nonce Derivation (Must match encryption exactly)
         let hkdf = Hkdf::<Sha256>::new(None, shared_secret.as_bytes());

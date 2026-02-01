@@ -20,11 +20,9 @@ impl OmikronConnection {
             .add_data_num(
                 DataTypes::last_ping,
                 Number::from(*self.last_ping.lock().await),
-            )
-            .to_json()
-            .to_string();
+            );
 
-        self.send_message(ping_message).await;
+        self.send_message(&ping_message).await;
     }
 
     /// Handles incoming pong and calculates latency
