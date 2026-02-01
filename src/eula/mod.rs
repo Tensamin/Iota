@@ -1,1 +1,1 @@
-pub mod eula_checker;
+pub mod terms_checker;

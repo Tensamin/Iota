@@ -1,4 +1,3 @@
-use json::{self};
 use once_cell::sync::Lazy;
 use pnet::datalink::NetworkInterface;
 use std::sync::Arc;
@@ -20,6 +19,7 @@ mod util;
 
 use crate::communities::community_manager;
 use crate::communities::interactables::registry;
+use crate::eula::terms_checker;
 use crate::gui::app_state::AppState;
 use crate::gui::input_handler;
 use crate::gui::log_panel;
@@ -48,10 +48,19 @@ async fn main() {
         *SHUTDOWN.write().await = false;
 
         // EULA
-        //if !eula_checker::check_eula() {
-        //    println!("Please accept the end user license agreement before launching!");
-        //    return;
-        //}
+        let (tos, pp) = terms_checker::ConsentManager::check();
+        if !tos {
+            println!("You need to accept our End User Licence Agreement before launching!");
+            println!("You can find this at 'agreements'!");
+            return;
+        }
+        if !pp {
+            println!(
+                "Please accept our Privacy Policy & Terms of Serivce before using Tensamin Services!"
+            );
+            println!("You can find this at 'agreements'!");
+            return;
+        }
 
         // LANGUAGE PACK
         if let Err(e) = language_creator::create_languages() {
