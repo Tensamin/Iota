@@ -5,20 +5,40 @@ use std::path::Path;
 
 use crate::gui::log_panel::log_message;
 
+#[derive(PartialEq, Debug, Clone)]
 pub enum MessageState {
     Read,
     Received,
+    Send,
     Sending,
-    Error,
 }
 
 impl MessageState {
-    fn as_str(&self) -> &'static str {
+    pub fn as_str(&self) -> &'static str {
         match self {
             MessageState::Read => "READ",
             MessageState::Received => "RECEIVED",
+            MessageState::Send => "SEND",
             MessageState::Sending => "SENDING",
-            MessageState::Error => "ERROR",
+        }
+    }
+    pub fn from_str(str: &str) -> Self {
+        match str.to_uppercase().as_str() {
+            "READ" => MessageState::Read,
+            "RECEIVED" => MessageState::Received,
+            "SEND" => MessageState::Send,
+            _ => MessageState::Sending,
+        }
+    }
+    pub fn upgrade(self, other: Self) -> Self {
+        if other == Self::Read || self == Self::Read {
+            Self::Read
+        } else if other == Self::Received || self == Self::Received {
+            Self::Received
+        } else if other == Self::Send || self == Self::Send {
+            Self::Send
+        } else {
+            Self::Sending
         }
     }
 }
@@ -86,9 +106,9 @@ pub fn add_message(
     save_file(&user_dir, &file_name, &message_chunk.dump());
 }
 pub fn change_message_state(
+    timestamp: i64,
     storage_owner: i64,
     external_user: i64,
-    timestamp: i64,
     new_state: MessageState,
 ) -> std::io::Result<()> {
     let user_dir = format!("users/{}/chats/{}", storage_owner, external_user);
@@ -114,7 +134,13 @@ pub fn change_message_state(
                 let mut modified = false;
                 for i in 0..chunk.len() {
                     if chunk[i]["message_time"].as_i64() == Some(timestamp) {
-                        chunk[i]["message_state"] = JsonValue::from(new_state.as_str());
+                        chunk[i]["message_state"] = JsonValue::from(
+                            MessageState::from_str(
+                                chunk[i]["message_state"].as_str().unwrap_or("SENDING"),
+                            )
+                            .upgrade(new_state.clone())
+                            .as_str(),
+                        );
                         modified = true;
                         break;
                     }

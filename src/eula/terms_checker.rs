@@ -93,15 +93,15 @@ impl ConsentUiState {
             .as_secs();
         format!(
             "\"EULA=true\" indicates that you read and accepted the End User Licence agreement. You can find our EULA at https://docs.tensamin.net/legal/eula/\
-                \nEULA={}\
-                \n\"PrivacyPolicy=true\" indicates that you read and accepted the Privacy Policy. You can find our Privacy Policy at https://docs.tensamin.net/legal/privacy-policy/\
-                \nPrivacyPolicy={}\
-                \n\"ToS=true\" indicates that you read and accepted the Terms of Service. You can find our Terms of Service at https://docs.tensamin.net/legal/terms-of-service/\
-                \nToS={}\
-                \nThis file reflects the current consent state used by the application.\
-                \nIt may be regenerated or overwritten by the application.\
-                \nThis file was last edited by Tensamin at:\
-                \nUNIX-SECOND={}",
+            \nEULA={}\
+            \n\"PrivacyPolicy=true\" indicates that you read and accepted the Privacy Policy. You can find our Privacy Policy at https://docs.tensamin.net/legal/privacy-policy/\
+            \nPrivacyPolicy={}\
+            \n\"ToS=true\" indicates that you read and accepted the Terms of Service. You can find our Terms of Service at https://docs.tensamin.net/legal/terms-of-service/\
+            \nToS={}\
+            \nThis file reflects the current consent state used by the application.\
+            \nIt may be regenerated or overwritten by the application.\
+            \nThis file was last edited by Tensamin at:\
+            \nUNIX-SECOND={}",
             self.eula, self.pp, self.tos, current_secs
         )
     }
