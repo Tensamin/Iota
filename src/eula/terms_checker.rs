@@ -172,11 +172,7 @@ impl ConsentUiState {
 }
 
 fn run_consent_ui() -> UserChoice {
-    enable_raw_mode().unwrap();
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen).unwrap();
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend).unwrap();
+    let mut terminal = ratatui::init();
 
     let mut state = ConsentUiState {
         eula: false,
@@ -188,23 +184,34 @@ fn run_consent_ui() -> UserChoice {
     let result = loop {
         terminal
             .draw(|f| {
-                let size = f.area();
-
                 let mut needed_height = 5;
 
-                let margin = if size.width > 80 && size.height > 18 {
-                    2
-                } else if size.width > 78 && size.height > 16 {
-                    1
-                } else {
-                    0
-                };
+                let size = f.area();
+
+                if size.height < 6
+                || size.width < 27 {
+                    f.render_widget(Line::from(format!("too small {}/63 by {}/12", size.width, size.height)), size);
+                    return;
+                }
+
+                let max_width = 132;
+                let max_height = 20;
+
+                let content_width = if max_width < size.width { max_width } else { size.width} ;
+                let content_height = if max_height < size.height { max_height } else { size.height} ;
+
+                let horizontal_margin = (size.width.saturating_sub(content_width)) / 2;
+                let vertical_margin = (size.height.saturating_sub(content_height)) / 2;
 
                 let chunks = Layout::default()
                     .direction(Direction::Vertical)
                     .constraints([Constraint::Min(7), Constraint::Length(3)])
-                    .margin(margin)
-                    .split(size);
+                    .split(Rect {
+                        x: horizontal_margin,
+                        y: vertical_margin,
+                        width: content_width,
+                        height: content_height,
+                    });
                 let eula_text = if size.width < 76 {
                     "EULA ¹ (https://docs.tensamin.net/legal/eula/)"
                 } else {
@@ -222,25 +229,25 @@ fn run_consent_ui() -> UserChoice {
                 };
 
                 let (mut optional_lines, agree_lines): (Vec<i16>, Vec<&str>) =
-                    if size.width > 131 {
+                    if size.width > 132 {
                         (
                             vec![7, 3, 4],
                             vec![
                                 "",
-                                "By selecting Continue, you confirm that you have read and agree to the End User License Agreement and applicable Terms of Service",
+                                "By selecting Continue, you confirm that you have read and agree to the End User License Agreement and applicable Terms of Service.",
                                 "",
                                 "Tensamin services require acceptance of the Terms of Service and Privacy Policy.",
                             ]
                         )
-                    } else  if size.width > 67 {
+                    } else  if size.width > 68 {
                         (
                             vec![8, 3, 4],
                             vec![
                                 "",
                                 "By selecting Continue, you confirm that you have read and agree",
-                                "to the End User License Agreement and applicable Terms of Service",
+                                "to the End User License Agreement and applicable Terms of Service.",
                                 "",
-                                "Tensamin services require acceptance of the ToS and Privacy Policy",
+                                "Tensamin services require acceptance of the ToS and Privacy Policy.",
                             ]
                         )
                     } else {
@@ -250,10 +257,10 @@ fn run_consent_ui() -> UserChoice {
                                 "",
                                 "By selecting Continue, you confirm that you have",
                                 "read and agree to the End User License Agreement",
-                                "and applicable Terms of Service",
+                                "and applicable Terms of Service.",
                                 "",
                                 "Tensamin services require acceptance of the",
-                                "Terms of Service and Privacy Policy"
+                                "Terms of Service and Privacy Policy."
                             ]
                         )
                     };
@@ -291,7 +298,7 @@ fn run_consent_ui() -> UserChoice {
 
                     let height_style = if size.height < needed_height as u16 {
                         Style::default().fg(Color::Red)
-                    } else if size.height >= 11 {
+                    } else if size.height < 17 {
                         Style::default().fg(Color::Yellow)
                     } else {
                         Style::default().fg(Color::Green)
@@ -368,10 +375,7 @@ fn run_consent_ui() -> UserChoice {
             }
         }
     };
-
-    disable_raw_mode().unwrap();
-    execute!(terminal.backend_mut(), LeaveAlternateScreen).unwrap();
-    terminal.show_cursor().unwrap();
+    ratatui::restore();
 
     result
 }

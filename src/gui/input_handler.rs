@@ -2,7 +2,6 @@ use std::time::Duration;
 
 use crate::ACTIVE_TASKS;
 use crate::{RELOAD, SHUTDOWN, gui::tui::UNIQUE, util::config_util::CONFIG};
-// Switched to poll/read which are available by default in crossterm
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, poll, read};
 
 use json::JsonValue;
@@ -48,6 +47,9 @@ pub fn setup_input_handler() {
 
 pub async fn handle_input(key: KeyEvent) {
     match (key.code, key.modifiers) {
+        (KeyCode::Char('q'), KeyModifiers::CONTROL) => {
+            *SHUTDOWN.write().await = true;
+        }
         (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
             *SHUTDOWN.write().await = true;
         }
@@ -67,7 +69,7 @@ pub async fn handle_input(key: KeyEvent) {
             let password: &str = &password;
             let password = match password.char_indices().next_back() {
                 Some((i, _)) => &password[..i],
-                None => password,
+                _ => password,
             };
 
             CONFIG
