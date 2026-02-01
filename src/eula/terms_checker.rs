@@ -1,19 +1,13 @@
 use crate::util::file_util::{load_file, save_file};
-use crossterm::{
-    event::{self, Event, KeyCode},
-    execute,
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
-};
+use crossterm::event::{self, Event, KeyCode};
 use ratatui::{
-    Terminal,
-    backend::CrosstermBackend,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Paragraph},
 };
+use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
-use std::{io, time::Duration};
 
 pub struct ConsentManager;
 impl ConsentManager {
@@ -98,18 +92,18 @@ impl ConsentUiState {
             .unwrap()
             .as_secs();
         format!(
-                "EULA=true indicates that you read and accepted the End User Licence agreement. You can find our EULA at https://docs.tensamin.net/legal/eula/
+            "\"EULA=true\" indicates that you read and accepted the End User Licence agreement. You can find our EULA at https://docs.tensamin.net/legal/eula/\
                 \nEULA={}\
-                \nPrivacyPolicy=true indicates that you read and accepted the Privacy Policy. You can find our Privacy Policy at https://docs.tensamin.net/legal/privacy-policy/
+                \n\"PrivacyPolicy=true\" indicates that you read and accepted the Privacy Policy. You can find our Privacy Policy at https://docs.tensamin.net/legal/privacy-policy/\
                 \nPrivacyPolicy={}\
-                \nToS=true indicates that you read and accepted the Terms of Service. You can find our Terms of Service at https://docs.tensamin.net/legal/terms-of-service/
+                \n\"ToS=true\" indicates that you read and accepted the Terms of Service. You can find our Terms of Service at https://docs.tensamin.net/legal/terms-of-service/\
                 \nToS={}\
                 \nThis file reflects the current consent state used by the application.\
                 \nIt may be regenerated or overwritten by the application.\
                 \nThis file was last edited by Tensamin at:\
-                \nUNIX={}",
-                self.eula, self.pp, self.tos, current_secs
-            )
+                \nUNIX-SECOND={}",
+            self.eula, self.pp, self.tos, current_secs
+        )
     }
 
     fn from_str(s: &str) -> Self {
@@ -330,7 +324,7 @@ fn run_consent_ui() -> UserChoice {
                 }
 
                 let consent_block = Paragraph::new(Text::from(text_lines))
-                    .block(Block::default().title("Consent").borders(Borders::ALL));
+                    .block(Block::default().title(" Tensamin User Consent ").borders(Borders::ALL));
                 f.render_widget(consent_block, chunks[0]);
 
                 draw_buttons(f, chunks[1], &state);
