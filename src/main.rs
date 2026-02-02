@@ -9,17 +9,16 @@ use tokio::time::{Duration, sleep};
 mod auth;
 mod communities;
 mod data;
-mod eula;
 mod gui;
 mod langu;
 mod omikron;
 mod server;
+mod terms;
 mod users;
 mod util;
 
 use crate::communities::community_manager;
 use crate::communities::interactables::registry;
-use crate::eula::terms_checker;
 use crate::gui::app_state::AppState;
 use crate::gui::input_handler;
 use crate::gui::log_panel;
@@ -29,6 +28,7 @@ use crate::langu::language_creator;
 use crate::langu::language_manager::format;
 use crate::omikron::omikron_connection::{OMIKRON_CONNECTION, OmikronConnection};
 use crate::server::server::start;
+use crate::terms::terms_checker;
 use crate::users::user_manager;
 use crate::util::config_util::CONFIG;
 use crate::util::file_util::has_dir;
@@ -48,7 +48,7 @@ async fn main() {
         *SHUTDOWN.write().await = false;
 
         // EULA
-        let (tos, pp) = terms_checker::ConsentManager::check();
+        let (tos, pp) = terms_checker::ConsentManager::check().await;
         if !tos {
             println!("You need to accept our End User Licence Agreement before launching!");
             println!("You can find this at 'agreements'!");
@@ -58,6 +58,7 @@ async fn main() {
             println!(
                 "Please accept our Privacy Policy & Terms of Serivce before using Tensamin Services!"
             );
+            println!("In future releases this will be optional!");
             println!("You can find this at 'agreements'!");
             return;
         }

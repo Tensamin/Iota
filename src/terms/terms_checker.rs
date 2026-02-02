@@ -1,4 +1,10 @@
-use crate::util::file_util::{load_file, save_file};
+use crate::{
+    terms::{
+        md_viewer::FileViewer,
+        terms_getter::{Type, get_link, get_terms},
+    },
+    util::file_util::{load_file, save_file},
+};
 use crossterm::event::{self, Event, KeyCode};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -11,14 +17,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 pub struct ConsentManager;
 impl ConsentManager {
-    pub fn check() -> (bool, bool) {
+    pub async fn check() -> (bool, bool) {
         let file = load_file("", "agreements");
         let existing = ConsentUiState::from_str(&file).sanitize();
 
         let final_state = if existing.eula {
             existing
         } else {
-            let choice = run_consent_ui();
+            let choice = run_consent_ui().await;
             let state = match choice {
                 UserChoice::Deny => ConsentUiState::denied(),
                 UserChoice::AcceptEULA => ConsentUiState {
@@ -92,11 +98,11 @@ impl ConsentUiState {
             .unwrap()
             .as_secs();
         format!(
-            "\"EULA=true\" indicates that you read and accepted the End User Licence agreement. You can find our EULA at https://docs.tensamin.net/legal/eula/\
+            "\"EULA=true\" indicates that you read and accepted the End User Licence agreement. You can find our EULA at https://legal.tensamin.net/eula/\
             \nEULA={}\
-            \n\"PrivacyPolicy=true\" indicates that you read and accepted the Privacy Policy. You can find our Privacy Policy at https://docs.tensamin.net/legal/privacy-policy/\
+            \n\"PrivacyPolicy=true\" indicates that you read and accepted the Privacy Policy. You can find our Privacy Policy at https://legal.tensamin.net/privacy-policy/\
             \nPrivacyPolicy={}\
-            \n\"ToS=true\" indicates that you read and accepted the Terms of Service. You can find our Terms of Service at https://docs.tensamin.net/legal/terms-of-service/\
+            \n\"ToS=true\" indicates that you read and accepted the Terms of Service. You can find our Terms of Service at https://legal.tensamin.net/terms-of-service/\
             \nToS={}\
             \nThis file reflects the current consent state used by the application.\
             \nIt may be regenerated or overwritten by the application.\
@@ -165,7 +171,7 @@ impl ConsentUiState {
     }
 }
 
-fn run_consent_ui() -> UserChoice {
+async fn run_consent_ui() -> UserChoice {
     let mut terminal = ratatui::init();
 
     let mut state = ConsentUiState {
@@ -176,6 +182,7 @@ fn run_consent_ui() -> UserChoice {
     };
 
     let result = loop {
+        let mut too_small = false;
         terminal
             .draw(|f| {
                 let mut needed_height = 5;
@@ -206,47 +213,52 @@ fn run_consent_ui() -> UserChoice {
                         width: content_width,
                         height: content_height,
                     });
-                let eula_text = if size.width < 76 {
-                    "EULA ¹ (https://docs.tensamin.net/legal/eula/)"
+                let eula_text = if size.width < 70 {
+                    "EULA ¹ (https://legal.tensamin.net/eula/)"
                 } else {
-                    "End User Licence Agreement ¹ (https://docs.tensamin.net/legal/eula/)"
+                    "End User Licence Agreement ¹ (https://legal.tensamin.net/eula/)"
                 };
-                let tos_text = if size.width < 76 {
-                    "ToS ² (https://docs.tensamin.net/legal/terms-of-service/)"
+                let tos_text = if size.width < 72 {
+                    "ToS ² (https://legal.tensamin.net/terms-of-service/)"
                 } else {
-                    "Terms of Service ² (https://docs.tensamin.net/legal/terms-of-service/)"
+                    "Terms of Service ² (https://legal.tensamin.net/terms-of-service/)"
                 };
-                let pp_text = if size.width < 76 {
-                    "PP ² (https://docs.tensamin.net/legal/privacy-policy/)"
+                let pp_text = if size.width < 68 {
+                    "PP ² (https://legal.tensamin.net/privacy-policy/)"
                 } else {
-                    "Privacy Policy ² (https://docs.tensamin.net/legal/privacy-policy/)"
+                    "Privacy Policy ² (https://legal.tensamin.net/privacy-policy/)"
                 };
 
                 let (mut optional_lines, agree_lines): (Vec<i16>, Vec<&str>) =
                     if size.width > 132 {
                         (
-                            vec![7, 3, 4],
+                            vec![7, 3, 7, 4],
                             vec![
                                 "",
                                 "By selecting Continue, you confirm that you have read and agree to the End User License Agreement and applicable Terms of Service.",
                                 "",
                                 "Tensamin services require acceptance of the Terms of Service and Privacy Policy.",
+                                "",
+                                "While having a document selected press O to view in this UI or press L to open as a link.",
                             ]
                         )
                     } else  if size.width > 68 {
                         (
-                            vec![8, 3, 4],
+                            vec![8, 3, 8, 4],
                             vec![
                                 "",
                                 "By selecting Continue, you confirm that you have read and agree",
                                 "to the End User License Agreement and applicable Terms of Service.",
                                 "",
                                 "Tensamin services require acceptance of the ToS and Privacy Policy.",
+                                "",
+                                "While having a document selected press O to view in this UI or",
+                                "press L to open as a link.",
                             ]
                         )
                     } else {
                         (
-                            vec![9, 3, 4],
+                            vec![9, 3, 10, 4],
                             vec![
                                 "",
                                 "By selecting Continue, you confirm that you have",
@@ -254,7 +266,10 @@ fn run_consent_ui() -> UserChoice {
                                 "and applicable Terms of Service.",
                                 "",
                                 "Tensamin services require acceptance of the",
-                                "Terms of Service and Privacy Policy."
+                                "Terms of Service and Privacy Policy.",
+                                "",
+                                "While having a document selected press O to view",
+                                "in this UI or press L to open as a link.",
                             ]
                         )
                     };
@@ -281,33 +296,33 @@ fn run_consent_ui() -> UserChoice {
 
 
 
-                if size.width < 63 || size.height < needed_height as u16 {
+                if size.width < 60 || size.height < needed_height as u16 {
                     let width_style = if size.width > 76 {
                         Style::default().fg(Color::Green)
-                    } else if size.width >= 63 {
+                    } else if size.width >= 60 {
                         Style::default().fg(Color::Yellow)
                     } else {
                         Style::default().fg(Color::Red)
                     };
 
-                    let height_style = if size.height < needed_height as u16 {
+                    let height_style = if size.height < 12 {
                         Style::default().fg(Color::Red)
-                    } else if size.height < 17 {
-                        Style::default().fg(Color::Yellow)
-                    } else {
+                    } else if size.height > 19 {
                         Style::default().fg(Color::Green)
+                    } else {
+                        Style::default().fg(Color::Yellow)
                     };
 
                     let warning_text = Text::from(vec![
                         Line::from(vec![
                             Span::raw("Width: "),
                             Span::styled(format!("{}", size.width), width_style),
-                            Span::raw(" / 63"),
+                            Span::raw(" / 60"),
                         ]),
                         Line::from(vec![
                             Span::raw("Height: "),
                             Span::styled(format!("{}", size.height), height_style),
-                            Span::raw(format!(" / {}", needed_height)),
+                            Span::raw(format!(" / 12")),
                         ]),
                     ]);
 
@@ -319,6 +334,7 @@ fn run_consent_ui() -> UserChoice {
                                 .title("UI Too Small (Q to Quit)"),
                         );
 
+                    too_small = true;
                     f.render_widget(warning, size);
                     return;
                 }
@@ -333,11 +349,47 @@ fn run_consent_ui() -> UserChoice {
 
         if event::poll(Duration::from_millis(200)).unwrap() {
             if let Event::Key(key) = event::read().unwrap() {
+                if too_small {
+                    if matches!(key.code, KeyCode::Char('q') | KeyCode::Char('Q')) {
+                        break UserChoice::Deny;
+                    } else {
+                        continue;
+                    }
+                }
                 match key.code {
                     KeyCode::Esc => break UserChoice::Deny,
                     KeyCode::Up => state.prev(),
                     KeyCode::Down | KeyCode::Tab => state.next(),
                     KeyCode::Char('q') | KeyCode::Char('Q') => break UserChoice::Deny,
+                    KeyCode::Char('o') | KeyCode::Char('O') => {
+                        let terms_type = match state.focus {
+                            Focus::Eula => Type::EULA,
+                            Focus::Tos => Type::TOS,
+                            Focus::Pp => Type::PP,
+                            _ => continue,
+                        };
+
+                        if let Some(eula) = get_terms(terms_type.clone()).await {
+                            terminal = FileViewer::new(terms_type.to_string(), &eula)
+                                .force_popup(terminal);
+                        } else {
+                            terminal = FileViewer::new(
+                                terms_type.to_string(),
+                                "### A loading error occured",
+                            )
+                            .force_popup(terminal);
+                        }
+                    }
+                    KeyCode::Char('l') | KeyCode::Char('L') => {
+                        let terms_type = match state.focus {
+                            Focus::Eula => Type::EULA,
+                            Focus::Tos => Type::TOS,
+                            Focus::Pp => Type::PP,
+                            _ => continue,
+                        };
+
+                        let _ = open::that(get_link(terms_type));
+                    }
                     KeyCode::Char(' ') => match state.focus {
                         Focus::Eula => {
                             state.eula = !state.eula;
