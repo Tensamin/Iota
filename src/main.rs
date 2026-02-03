@@ -146,7 +146,7 @@ async fn main() {
                 break;
             }
             let omikron: Arc<OmikronConnection> = Arc::new(OmikronConnection::new());
-            omikron.connect(sb.clone()).await;
+            omikron.connect().await;
             let mut omikron_connection = OMIKRON_CONNECTION.write().await;
             *omikron_connection = Some(omikron.clone());
             log_message_trans("setup_completed");

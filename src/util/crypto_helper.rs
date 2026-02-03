@@ -9,6 +9,7 @@ use x448::{PublicKey, Secret, SharedSecret};
 
 /// Errors for crypto opertions
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum CryptoError {
     Base64Decode(base64::DecodeError),
     InvalidKey,
@@ -55,6 +56,7 @@ pub fn load_secret_key(base64_secret: &str) -> Option<Secret> {
     Secret::from_bytes(&bytes)
 }
 
+#[allow(dead_code)]
 fn derive_aes_key(shared: &SharedSecret) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(shared.as_bytes());
@@ -64,6 +66,7 @@ fn derive_aes_key(shared: &SharedSecret) -> [u8; 32] {
     key
 }
 
+#[allow(dead_code)]
 pub fn encrypt(
     base64_secret: &str,
     base64_peer_pub: &str,
@@ -89,6 +92,7 @@ pub fn encrypt(
     Ok(STANDARD.encode(&out))
 }
 
+#[allow(dead_code)]
 pub fn decrypt(
     base64_secret: &str,
     base64_peer_pub: &str,

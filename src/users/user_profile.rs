@@ -1,7 +1,5 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::gui::log_panel::log_message;
-use crate::users::user_manager;
 use crate::util::file_util::{has_file, load_file, used_dir_space};
 use base64::{Engine as _, engine::general_purpose};
 use json::{JsonValue, object};
@@ -84,7 +82,7 @@ impl UserProfile {
         let created_at = j["created_at"].as_i64()?;
         let display_name = j["display_name"].as_str().map(|s| s.to_string());
 
-        let mut up = UserProfile {
+        let up = UserProfile {
             user_id,
             username,
             display_name,
@@ -110,6 +108,7 @@ impl UserProfile {
         Some(up)
     }
 
+    #[allow(dead_code)]
     pub fn randomize_reset_token(&mut self) -> String {
         let mut bytes = [0u8; 192];
         OsRng.fill(bytes.as_mut());
@@ -118,6 +117,7 @@ impl UserProfile {
         new_token
     }
 
+    #[allow(dead_code)]
     pub fn get_display_name(&self) -> String {
         self.display_name
             .clone()

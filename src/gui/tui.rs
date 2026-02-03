@@ -1,23 +1,13 @@
-use std::{
-    io::{Stdout, Write, stdout},
-    sync::Arc,
-    time::Duration,
-};
+use std::{io::Stdout, sync::Arc, time::Duration};
 
 use crate::{
-    ACTIVE_TASKS, APP_STATE, SHUTDOWN,
+    APP_STATE, SHUTDOWN,
     gui::{settings_panel, widgets::betterblock::draw_block_joins},
     util::config_util::CONFIG,
-};
-use crossterm::{
-    cursor::Show,
-    execute,
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen, enable_raw_mode},
 };
 use once_cell::sync::Lazy;
 use ratatui::{
     Frame, Terminal,
-    crossterm::terminal::disable_raw_mode,
     layout::{Constraint, Direction, Layout, Rect},
     prelude::CrosstermBackend,
     style::Color,

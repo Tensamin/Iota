@@ -22,7 +22,7 @@ use x448::{PublicKey, Secret};
 static USERS: Lazy<Mutex<Vec<UserProfile>>> = Lazy::new(|| Mutex::new(Vec::new()));
 static UNIQUE: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 
-// uuid::private_key
+#[allow(dead_code)]
 pub async fn load_from_tu(username: &str) -> Result<(), ()> {
     let file_content = load_file("", &format!("{}.tu", username));
     let segments = file_content.split("::").collect::<Vec<&str>>();
@@ -181,6 +181,7 @@ pub async fn load_users() -> io::Result<()> {
     Ok(())
 }
 
+#[allow(dead_code)]
 pub fn set_unique(val: bool) {
     *UNIQUE.lock().unwrap() = val;
 }

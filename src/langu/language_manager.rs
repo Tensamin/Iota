@@ -9,20 +9,20 @@ pub struct LanguagePack {
     language: HashMap<String, String>,
 }
 
-// Language packs need to have formatting
-// Variables need to be provided
-
 pub static LANGUAGE_PACK: Lazy<Mutex<LanguagePack>> =
     Lazy::new(|| Mutex::new(LanguagePack::new("en_INT")));
 
+#[allow(dead_code)]
 pub fn get_language() -> LanguagePack {
     LANGUAGE_PACK.lock().unwrap().clone()
 }
 
+#[allow(dead_code)]
 pub fn get_languages() -> Vec<String> {
     file_util::get_children("languages")
 }
 
+#[allow(dead_code)]
 pub fn set_language(language: &str) {
     LANGUAGE_PACK.lock().unwrap().language.clear();
     LANGUAGE_PACK.lock().unwrap().load_language(language);

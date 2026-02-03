@@ -1,7 +1,7 @@
 use crate::{
     terms::{
         md_viewer::FileViewer,
-        terms_getter::{Type, get_link, get_terms},
+        terms_getter::{Type, get_current_docs, get_link, get_terms},
     },
     util::file_util::{load_file, save_file},
 };
@@ -41,7 +41,9 @@ impl ConsentManager {
                 },
             };
             let state = state.sanitize();
-            save_file("", "agreements", &state.to_string());
+            if let Ok(string) = state.to_string().await {
+                save_file("", "agreements", &string);
+            }
             state
         };
 
@@ -92,24 +94,46 @@ impl ConsentUiState {
         self
     }
 
-    fn to_string(self) -> String {
+    async fn to_string(self) -> Result<String, ()> {
         let current_secs = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        format!(
-            "\"EULA=true\" indicates that you read and accepted the End User Licence agreement. You can find our EULA at https://legal.tensamin.net/eula/\
+
+        if let Some((eula, tos, pp)) = get_current_docs().await {
+            Ok(format!(
+                "\
+            \"EULA=true\" indicates that you read, understood and accepted the End User Licence agreement. You can find our EULA at https://legal.tensamin.net/eula/\
             \nEULA={}\
-            \n\"PrivacyPolicy=true\" indicates that you read and accepted the Privacy Policy. You can find our Privacy Policy at https://legal.tensamin.net/privacy-policy/\
+            \nEULA-VERSION={}\
+            \nEULA-HASH={}\
+            \n\"PrivacyPolicy=true\" indicates that you read, understood and accepted the Privacy Policy. You can find our Privacy Policy at https://legal.tensamin.net/privacy-policy/\
             \nPrivacyPolicy={}\
-            \n\"ToS=true\" indicates that you read and accepted the Terms of Service. You can find our Terms of Service at https://legal.tensamin.net/terms-of-service/\
+            \nPrivacyPolicy-VERSION={}\
+            \nPrivacyPolicy-HASH={}\
+            \n\"ToS=true\" indicates that you read, understood and accepted the Terms of Service. You can find our Terms of Service at https://legal.tensamin.net/terms-of-service/\
             \nToS={}\
+            \nToS-VERSION={}\
+            \nToS-HASH={}\
             \nThis file reflects the current consent state used by the application.\
             \nIt may be regenerated or overwritten by the application.\
             \nThis file was last edited by Tensamin at:\
-            \nUNIX-SECOND={}",
-            self.eula, self.pp, self.tos, current_secs
-        )
+            \nUNIX-SECOND={}\
+            ",
+                self.eula,
+                eula.get_version(),
+                eula.get_hash(),
+                self.tos,
+                tos.get_version(),
+                tos.get_hash(),
+                self.pp,
+                pp.get_version(),
+                pp.get_hash(),
+                current_secs
+            ))
+        } else {
+            Err(())
+        }
     }
 
     fn from_str(s: &str) -> Self {
@@ -195,7 +219,7 @@ async fn run_consent_ui() -> UserChoice {
                     return;
                 }
 
-                let max_width = 132;
+                let max_width = 150;
                 let max_height = 20;
 
                 let content_width = if max_width < size.width { max_width } else { size.width} ;
@@ -230,30 +254,43 @@ async fn run_consent_ui() -> UserChoice {
                 };
 
                 let (mut optional_lines, agree_lines): (Vec<i16>, Vec<&str>) =
-                    if size.width > 132 {
+                    if size.width > 143 {
                         (
                             vec![7, 3, 7, 4],
                             vec![
                                 "",
-                                "By selecting Continue, you confirm that you have read and agree to the End User License Agreement and applicable Terms of Service.",
+                                "By selecting Continue, you confirm that you have read, understood and agree to the End User License Agreement and applicable Terms of Service.",
                                 "",
                                 "Tensamin services require acceptance of the Terms of Service and Privacy Policy.",
                                 "",
                                 "While having a document selected press O to view in this UI or press L to open as a link.",
                             ]
                         )
-                    } else  if size.width > 68 {
+                    } else if size.width > 92 {
                         (
                             vec![8, 3, 8, 4],
                             vec![
                                 "",
-                                "By selecting Continue, you confirm that you have read and agree",
-                                "to the End User License Agreement and applicable Terms of Service.",
+                                "By selecting Continue, you confirm that you have read, understood and agree to the End User",
+                                "License Agreement and applicable Terms of Service.",
+                                "",
+                                "Tensamin services require acceptance of the Terms of Service and Privacy Policy.",
+                                "",
+                                "While having a document selected press O to view in this UI or press L to open as a link.",
+                            ]
+                        )
+                    } else if size.width > 73 {
+                        (
+                            vec![8, 3, 8, 4],
+                            vec![
+                                "",
+                                "By selecting Continue, you confirm that you have read, understood and",
+                                "agree to the End User License Agreement and applicable Terms of Service.",
                                 "",
                                 "Tensamin services require acceptance of the ToS and Privacy Policy.",
                                 "",
-                                "While having a document selected press O to view in this UI or",
-                                "press L to open as a link.",
+                                "While having a document selected press O to view in this UI or press L",
+                                "to open as a link.",
                             ]
                         )
                     } else {
@@ -262,8 +299,8 @@ async fn run_consent_ui() -> UserChoice {
                             vec![
                                 "",
                                 "By selecting Continue, you confirm that you have",
-                                "read and agree to the End User License Agreement",
-                                "and applicable Terms of Service.",
+                                "read, understood and agree to the End User License",
+                                "Agreement and applicable Terms of Service.",
                                 "",
                                 "Tensamin services require acceptance of the",
                                 "Terms of Service and Privacy Policy.",
@@ -340,7 +377,7 @@ async fn run_consent_ui() -> UserChoice {
                 }
 
                 let consent_block = Paragraph::new(Text::from(text_lines))
-                    .block(Block::default().title(" Tensamin User Consent ").borders(Borders::ALL));
+                    .block(Block::default().title(" Tensamin User Consent [Q to Quit] ").borders(Borders::ALL));
                 f.render_widget(consent_block, chunks[0]);
 
                 draw_buttons(f, chunks[1], &state);
@@ -358,8 +395,8 @@ async fn run_consent_ui() -> UserChoice {
                 }
                 match key.code {
                     KeyCode::Esc => break UserChoice::Deny,
-                    KeyCode::Up => state.prev(),
-                    KeyCode::Down | KeyCode::Tab => state.next(),
+                    KeyCode::Up | KeyCode::Left => state.prev(),
+                    KeyCode::Down | KeyCode::Right | KeyCode::Tab => state.next(),
                     KeyCode::Char('q') | KeyCode::Char('Q') => break UserChoice::Deny,
                     KeyCode::Char('o') | KeyCode::Char('O') => {
                         let terms_type = match state.focus {
@@ -516,7 +553,7 @@ fn draw_buttons(f: &mut ratatui::Frame, area: Rect, state: &ConsentUiState) {
                         .fg(Color::Black)
                         .bg(Color::Green)
                         .add_modifier(Modifier::BOLD)
-                } else if state.can_continue() && state.pp {
+                } else if state.can_continue_all() {
                     Style::default().fg(Color::Green)
                 } else {
                     Style::default().fg(Color::DarkGray)

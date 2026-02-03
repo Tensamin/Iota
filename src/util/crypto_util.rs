@@ -9,6 +9,7 @@ use x448::{PublicKey, Secret};
 
 // --- Custom Errors ---
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum SecurePayloadError {
     InvalidBase64,
     InvalidHex,
@@ -19,6 +20,7 @@ pub enum SecurePayloadError {
 
 // --- Data Format Enum ---
 #[derive(Clone, Copy, Debug)]
+#[allow(dead_code)]
 pub enum DataFormat {
     Raw,
     Base64,
@@ -42,6 +44,7 @@ impl Clone for SecurePayload {
     }
 }
 
+#[allow(dead_code)]
 impl SecurePayload {
     /// Clear Constructor: Takes data in any format and the user's private key.
     pub fn new<S, T: AsRef<[u8]>>(

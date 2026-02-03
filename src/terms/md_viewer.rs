@@ -306,6 +306,14 @@ fn table_to_lines(table: Vec<Vec<String>>) -> Vec<DisplayLine> {
     }
 
     let header = &table[0];
+    let mut column_heights = vec![0; table[0].len()];
+
+    for row in table.iter().skip(1) {
+        for (i, cell) in row.iter().enumerate() {
+            let lines = cell.lines().count().max(1);
+            column_heights[i] += lines;
+        }
+    }
 
     let widths: Vec<usize> = header
         .iter()
@@ -383,22 +391,47 @@ fn wrap_cell(cell: &str, width: usize) -> Vec<String> {
         return vec![String::new()];
     }
 
-    let mut out = Vec::new();
-    let mut chars = cell.chars();
+    let mut lines = Vec::new();
+    let mut current = String::new();
 
-    loop {
-        let line: String = chars.by_ref().take(width).collect();
-        if line.is_empty() {
-            break;
+    for word in cell.split_whitespace() {
+        let word_len = word.chars().count();
+        let current_len = current.chars().count();
+
+        if current_len == 0 {
+            if word_len <= width {
+                current.push_str(word);
+            } else {
+                for chunk in word.chars().collect::<Vec<_>>().chunks(width) {
+                    lines.push(chunk.iter().collect());
+                }
+            }
+        } else if current_len + 1 + word_len <= width {
+            current.push(' ');
+            current.push_str(word);
+        } else {
+            lines.push(current);
+            current = String::new();
+
+            if word_len <= width {
+                current.push_str(word);
+            } else {
+                for chunk in word.chars().collect::<Vec<_>>().chunks(width) {
+                    lines.push(chunk.iter().collect());
+                }
+            }
         }
-        out.push(line);
     }
 
-    if out.is_empty() {
-        out.push(String::new());
+    if !current.is_empty() {
+        lines.push(current);
     }
 
-    out
+    if lines.is_empty() {
+        lines.push(String::new());
+    }
+
+    lines
 }
 
 fn flush_span(spans: &mut Vec<Span>, buf: &mut String, style: Style) {

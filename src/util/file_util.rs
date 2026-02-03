@@ -18,11 +18,13 @@ pub fn delete_file(path: &str, name: &str) -> bool {
     fs::remove_file(file).is_ok()
 }
 
+#[allow(dead_code)]
 pub fn delete_directory(path: &str) -> bool {
     let dir = Path::new(&get_directory()).join(path);
     delete_dir_recursive(&dir)
 }
 
+#[allow(dead_code)]
 fn delete_dir_recursive(directory: &Path) -> bool {
     if !directory.exists() {
         return false;
@@ -38,6 +40,7 @@ fn delete_dir_recursive(directory: &Path) -> bool {
     true
 }
 
+#[allow(dead_code)]
 pub fn delete_user_directory(user_id: Uuid) {
     let user_dir = Path::new(&get_directory())
         .join("users")
@@ -187,6 +190,7 @@ pub fn get_directory() -> String {
         .to_string()
 }
 
+#[allow(dead_code)]
 pub fn used_space() -> u64 {
     get_directory_size(&PathBuf::from(get_directory()))
 }
@@ -208,6 +212,7 @@ pub fn get_directory_size(directory: &Path) -> u64 {
     size
 }
 
+#[allow(dead_code)]
 pub fn get_designed_storage(user_id: Uuid) -> String {
     let user_dir = Path::new(&get_directory())
         .join("users")
@@ -215,6 +220,7 @@ pub fn get_designed_storage(user_id: Uuid) -> String {
     design_byte(get_directory_size(&user_dir))
 }
 
+#[allow(dead_code)]
 pub fn design_byte(bytes: u64) -> String {
     let mut hr_size = format!("{:.2}B", bytes as f64);
     let k = bytes as f64 / 1024.0;
@@ -234,6 +240,7 @@ pub fn design_byte(bytes: u64) -> String {
     hr_size
 }
 
+#[allow(dead_code)]
 pub fn get_used_ram() -> String {
     let mut sys = System::new_all();
     sys.refresh_all();
@@ -243,6 +250,7 @@ pub fn get_used_ram() -> String {
 }
 
 // Helper to download the zip file content to a file on disk
+#[allow(dead_code)]
 async fn download_zip(url: &str, as_name: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let response = reqwest::get(url).await?;
 
@@ -258,6 +266,7 @@ async fn download_zip(url: &str, as_name: &Path) -> Result<(), Box<dyn std::erro
     Ok(())
 }
 
+#[allow(dead_code, deprecated)]
 fn extract_zip_contents_to_folder(
     zip_path: &Path,
     target_dir: &Path,
@@ -334,6 +343,7 @@ fn extract_zip_contents_to_folder(
     Ok(())
 }
 
+#[allow(dead_code)]
 pub async fn download_and_extract_zip(url: &str, as_name: &str) {
     let base_dir = PathBuf::from(get_directory());
     let zip_filename = format!("{}.zip", Uuid::new_v4()); // Use a unique name for the downloaded ZIP file

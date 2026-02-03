@@ -14,15 +14,14 @@ use crate::{
     util::{config_util::CONFIG, crypto_helper},
 };
 use dashmap::DashMap;
+use futures::Stream;
 use futures::stream::{SplitSink, SplitStream};
-use futures::{FutureExt, Stream};
 use futures_util::sink::Sink;
 use futures_util::{SinkExt, StreamExt};
 use hyper::upgrade::Upgraded;
 use hyper_util::rt::TokioIo;
 use json::JsonValue;
 use json::number::Number;
-use pkcs8::DecodePrivateKey;
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -31,7 +30,6 @@ use tokio::time::{Duration, Instant, sleep};
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 use tungstenite::Utf8Bytes;
 use uuid::Uuid;
-use warp::reply::Json;
 
 pub static OMIKRON_CONNECTION: LazyLock<Arc<RwLock<Option<Arc<OmikronConnection>>>>> =
     LazyLock::new(|| Arc::new(RwLock::new(None)));
@@ -50,7 +48,6 @@ pub struct OmikronConnection {
     pub(crate) writer:
         Arc<Mutex<Option<Box<dyn Sink<Message, Error = tungstenite::Error> + Send + Unpin>>>>,
     waiting: Arc<DashMap<Uuid, Box<dyn Fn(CommunicationValue) + Send + Sync>>>,
-    pingpong: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
     pub last_ping: Arc<Mutex<i64>>,
     pub message_send_times: Arc<Mutex<HashMap<Uuid, Instant>>>,
     pub is_connected: Arc<Mutex<bool>>,
@@ -63,7 +60,6 @@ impl OmikronConnection {
             user_id: Arc::new(RwLock::new(0)),
             writer: Arc::new(Mutex::new(None)),
             waiting: Arc::new(DashMap::new()),
-            pingpong: Arc::new(Mutex::new(None)),
             last_ping: Arc::new(Mutex::new(-1)),
             message_send_times: Arc::new(Mutex::new(HashMap::new())),
             is_connected: Arc::new(Mutex::new(false)),
@@ -79,7 +75,6 @@ impl OmikronConnection {
             writer: Arc::new(Mutex::new(Some(Box::new(writer)
                 as Box<dyn Sink<Message, Error = tungstenite::Error> + Send + Unpin>))),
             waiting: Arc::new(DashMap::new()),
-            pingpong: Arc::new(Mutex::new(None)),
             last_ping: Arc::new(Mutex::new(-1)),
             message_send_times: Arc::new(Mutex::new(HashMap::new())),
             is_connected: Arc::new(Mutex::new(true)),
@@ -94,8 +89,8 @@ impl OmikronConnection {
     pub async fn is_connected(&self) -> bool {
         *self.is_connected.lock().await
     }
-    /// Connect loop with retry
-    pub async fn connect(self: &Arc<Self>, user_ids: String) {
+
+    pub async fn connect(self: &Arc<Self>) {
         if self.is_connected().await {
             return;
         }
@@ -104,10 +99,9 @@ impl OmikronConnection {
         let iota_id = conf.get_iota_id();
         let public_key = conf.get_public_key();
         let private_key = conf.get_private_key();
-        drop(conf); // release read lock
+        drop(conf);
 
         if iota_id == 0 || public_key.is_none() || private_key.is_none() {
-            // Registration flow
             log_message_trans("iota_register_new");
             let key_pair = crypto_helper::generate_keypair();
             let public_key_base64 = crypto_helper::public_key_to_base64(&key_pair.public);
@@ -120,7 +114,6 @@ impl OmikronConnection {
             drop(conf_write);
 
             if self.connect_internal().await {
-                // a new helper function to just connect
                 match self
                     .clone()
                     .await_response(
@@ -148,7 +141,6 @@ impl OmikronConnection {
                 }
             }
         } else {
-            // Login flow
             if self.connect_internal().await {
                 self.send_message(
                     &CommunicationValue::new(CommunicationType::identification).add_data(
@@ -167,7 +159,6 @@ impl OmikronConnection {
         }
         log_message_trans("omikron_connecting");
 
-        // connect to omikron
         let conf = CONFIG.read().await;
         let addr = conf
             .get("omikron_addr")
@@ -223,7 +214,6 @@ impl OmikronConnection {
         *self.user_id.write().await = user_id;
     }
 
-    /// Listener for all incoming messages
     async fn spawn_listener(
         self: &Arc<Self>,
         mut read_half: Box<dyn Stream<Item = Result<Message, tungstenite::Error>> + Send + Unpin>,
@@ -444,7 +434,7 @@ impl OmikronConnection {
                         let sender_id = &cv.get_sender();
                         let receiver_id = &cv.get_receiver();
 
-                        chat_files::change_message_state(
+                        let _ = chat_files::change_message_state(
                             cv.get_data(DataTypes::send_time)
                                 .unwrap_or(&JsonValue::new_object())
                                 .as_i64()
@@ -520,7 +510,8 @@ impl OmikronConnection {
                                         DataTypes::message_state,
                                         JsonValue::from(ms.as_str()),
                                     ),
-                            );
+                            )
+                            .await;
                         } else {
                             self.send_message(
                                 &CommunicationValue::new(CommunicationType::message_state)
@@ -535,7 +526,8 @@ impl OmikronConnection {
                                         DataTypes::message_state,
                                         JsonValue::from(MessageState::Send.as_str()),
                                     ),
-                            );
+                            )
+                            .await;
                         }
                         return;
                     }

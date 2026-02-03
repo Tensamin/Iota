@@ -1,3 +1,7 @@
+use json::JsonValue::Object;
+
+use crate::terms::doc::Doc;
+
 #[derive(Clone)]
 pub enum Type {
     EULA,
@@ -10,7 +14,7 @@ impl Type {
         match self {
             Self::EULA => "eula",
             Self::TOS => "tos",
-            Self::PP => "pp",
+            Self::PP => "privacy",
         }
     }
     pub fn to_string(&self) -> String {
@@ -21,9 +25,40 @@ impl Type {
         }
     }
 }
+
 pub fn get_link(terms_type: Type) -> String {
     format!("https://legal.tensamin.net/{}/", terms_type.to_str())
 }
+
+pub async fn get_current_docs() -> Option<(Doc, Doc, Doc)> {
+    let body = reqwest::get("https://legal.tensamin.net/api/current/")
+        .await
+        .ok()?
+        .text()
+        .await
+        .ok()?;
+
+    let json = json::parse(&body).ok()?;
+
+    if let Object(eula) = &json["eula"] {
+        if let Object(tos) = &json["tos"] {
+            if let Object(pp) = &json["pp"] {
+                Some((
+                    Doc::from_json(Type::EULA, eula.clone())?,
+                    Doc::from_json(Type::TOS, tos.clone())?,
+                    Doc::from_json(Type::PP, pp.clone())?,
+                ))
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    }
+}
+
 pub async fn get_terms(terms_type: Type) -> Option<String> {
     let body = reqwest::get(format!(
         "https://legal.tensamin.net/api/text/{}/",
