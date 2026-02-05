@@ -1,5 +1,3 @@
-use crate::terms::consent_state::ConsentState;
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Focus {
     Eula,
@@ -10,20 +8,20 @@ pub enum Focus {
     ContinueAll,
 }
 impl Focus {
-    pub fn next(&mut self, state: ConsentState) {
+    pub fn next(&mut self, state: (bool, bool, bool)) {
         *self = match self {
             Focus::Eula => Focus::Tos,
             Focus::Tos => Focus::Pp,
             Focus::Pp => Focus::Cancel,
             Focus::Cancel => {
-                if state.can_continue() {
+                if state.0 {
                     Focus::Continue
                 } else {
                     Focus::Eula
                 }
             }
             Focus::Continue => {
-                if state.can_continue_all() {
+                if state.0 && state.1 && state.2 {
                     Focus::ContinueAll
                 } else {
                     Focus::Eula
@@ -33,12 +31,12 @@ impl Focus {
         };
     }
 
-    pub fn prev(&mut self, state: ConsentState) {
+    pub fn prev(&mut self, state: (bool, bool, bool)) {
         *self = match self {
             Focus::Eula => {
-                if state.can_continue_all() {
+                if state.0 && state.1 && state.2 {
                     Focus::ContinueAll
-                } else if state.can_continue() {
+                } else if state.0 {
                     Focus::Continue
                 } else {
                     Focus::Cancel

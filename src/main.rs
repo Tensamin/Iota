@@ -29,7 +29,6 @@ use crate::langu::language_manager::format;
 use crate::omikron::omikron_connection::{OMIKRON_CONNECTION, OmikronConnection};
 use crate::server::server::start;
 use crate::terms::consent_state;
-use crate::terms::terms_checker;
 use crate::users::user_manager;
 use crate::util::config_util::CONFIG;
 use crate::util::file_util::has_dir;

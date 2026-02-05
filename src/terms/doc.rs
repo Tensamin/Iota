@@ -2,7 +2,7 @@ use json::{JsonValue, object::Object};
 
 use crate::{terms::terms_getter::Type, util::file_util::load_file};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 #[allow(unused)]
 pub struct Doc {
     version: String,
@@ -13,6 +13,15 @@ pub struct Doc {
 
 #[allow(dead_code)]
 impl Doc {
+    pub fn new(version: String, hash: String, doc_type: Type, timestamp: u64) -> Doc {
+        Doc {
+            version,
+            hash,
+            doc_type,
+            timestamp,
+        }
+    }
+
     pub fn get_version(&self) -> String {
         self.version.clone()
     }

@@ -2,7 +2,7 @@ use json::JsonValue::Object;
 
 use crate::terms::doc::Doc;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Type {
     EULA,
     TOS,

@@ -1,5 +1,5 @@
 use crate::terms::{
-    consent_state::{ConsentState, UserChoice},
+    consent_state::UserChoice,
     focus::Focus,
     md_viewer::FileViewer,
     terms_getter::{Type, get_link, get_terms},
@@ -13,7 +13,7 @@ use ratatui::{
 };
 use std::time::Duration;
 
-pub async fn run_consent_ui(consent: ConsentState) -> ConsentState {
+pub async fn run_consent_ui() -> UserChoice {
     let mut terminal = ratatui::init();
 
     let (mut eula, mut tos, mut pp) = (false, false, false);
@@ -194,7 +194,7 @@ pub async fn run_consent_ui(consent: ConsentState) -> ConsentState {
                     .block(Block::default().title(" Tensamin User Consent [Q to Quit] ").borders(Borders::ALL));
                 f.render_widget(consent_block, chunks[0]);
 
-                draw_buttons(f, chunks[1], focus, (eula, tos, pp));
+                draw_buttons(f, chunks[1], (eula, tos, pp));
             })
             .unwrap();
 
@@ -275,24 +275,7 @@ pub async fn run_consent_ui(consent: ConsentState) -> ConsentState {
     };
     ratatui::restore();
 
-    match result {
-        UserChoice::AcceptAll => {
-            consent.accepted_eula == true;
-            consent.accepted_tos == true;
-            consent.accepted_pp == true;
-        }
-        UserChoice::AcceptEULA => {
-            consent.accepted_eula == true;
-            consent.accepted_tos == true;
-            consent.accepted_pp == true;
-        }
-        UserChoice::Deny => {
-            consent.accepted_eula == false;
-            consent.accepted_tos == false;
-            consent.accepted_pp == false;
-        }
-    };
-    consent
+    result
 }
 
 #[allow(mismatched_lifetime_syntaxes)]
@@ -330,12 +313,7 @@ fn draw_button(f: &mut ratatui::Frame, area: Rect, label: &str, style: Style) {
         .block(Block::default().borders(Borders::ALL));
     f.render_widget(p, area);
 }
-fn draw_buttons(
-    f: &mut ratatui::Frame,
-    area: Rect,
-    current_focus: Focus,
-    state: (bool, bool, bool),
-) {
+fn draw_buttons(f: &mut ratatui::Frame, area: Rect, state: (bool, bool, bool)) {
     let buttons = vec![
         ("[Q] Cancel", Focus::Cancel),
         ("Continue", Focus::Continue),
@@ -361,11 +339,9 @@ fn draw_buttons(
         };
         x += width;
 
-        let is_focused = current_focus == *focus;
-
         let style = match focus {
             Focus::Cancel => {
-                if is_focused {
+                if focus == &Focus::Cancel {
                     Style::default()
                         .fg(Color::Black)
                         .bg(Color::Red)
@@ -374,22 +350,8 @@ fn draw_buttons(
                     Style::default().fg(Color::Red)
                 }
             }
-
             Focus::Continue => {
-                if is_focused && state.0 {
-                    Style::default()
-                        .fg(Color::Black)
-                        .bg(Color::Green)
-                        .add_modifier(Modifier::BOLD)
-                } else if state.0 {
-                    Style::default().fg(Color::Green) // enabled but not focused
-                } else {
-                    Style::default().fg(Color::DarkGray)
-                }
-            }
-
-            Focus::ContinueAll => {
-                if is_focused && state.0 && state.1 && state.2 {
+                if focus == &Focus::Continue && state.0 {
                     Style::default()
                         .fg(Color::Black)
                         .bg(Color::Green)
@@ -400,13 +362,25 @@ fn draw_buttons(
                     Style::default().fg(Color::DarkGray)
                 }
             }
-
+            Focus::ContinueAll => {
+                if focus == &Focus::ContinueAll && state.0 && state.1 && state.2 {
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(Color::Green)
+                        .add_modifier(Modifier::BOLD)
+                } else if state.0 && state.1 && state.2 {
+                    Style::default().fg(Color::Green)
+                } else {
+                    Style::default().fg(Color::DarkGray)
+                }
+            }
             _ => Style::default().fg(Color::DarkGray),
         };
 
         draw_button(f, chunk, label, style);
     }
 }
+
 fn compute_widths(area_width: u16, min_widths: &[u16]) -> Vec<u16> {
     let mut widths = vec![0; min_widths.len()];
     let mut remaining: Vec<usize> = (0..min_widths.len()).collect();
