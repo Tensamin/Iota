@@ -1,9 +1,7 @@
-use crate::{
-    terms::{
-        md_viewer::FileViewer,
-        terms_getter::{Type, get_current_docs, get_link, get_terms},
-    },
-    util::file_util::{load_file, save_file},
+use crate::terms::{
+    consent_state::{ConsentUiState, UserChoice},
+    md_viewer::FileViewer,
+    terms_getter::{Type, get_link, get_terms},
 };
 use crossterm::event::{self, Event, KeyCode};
 use ratatui::{
@@ -13,61 +11,9 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 use std::time::Duration;
-use std::time::{SystemTime, UNIX_EPOCH};
-
-pub struct ConsentManager;
-impl ConsentManager {
-    pub async fn check() -> (bool, bool) {
-        let file = load_file("", "agreements");
-        let existing = ConsentUiState::from_str(&file).sanitize();
-
-        let final_state = if existing.eula {
-            existing
-        } else {
-            let choice = run_consent_ui().await;
-            let state = match choice {
-                UserChoice::Deny => ConsentUiState::denied(),
-                UserChoice::AcceptEULA => ConsentUiState {
-                    eula: true,
-                    tos: false,
-                    pp: false,
-                    focus: Focus::Cancel,
-                },
-                UserChoice::AcceptAll => ConsentUiState {
-                    eula: true,
-                    tos: true,
-                    pp: true,
-                    focus: Focus::Cancel,
-                },
-            };
-            let state = state.sanitize();
-            if let Ok(string) = state.to_string().await {
-                save_file("", "agreements", &string);
-            }
-            state
-        };
-
-        (final_state.eula, final_state.pp && final_state.tos)
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum UserChoice {
-    Deny,
-    AcceptEULA,
-    AcceptAll,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct ConsentUiState {
-    eula: bool,
-    tos: bool,
-    pp: bool,
-    focus: Focus,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum Focus {
+pub enum Focus {
     Eula,
     Tos,
     Pp,
@@ -75,117 +21,41 @@ enum Focus {
     Continue,
     ContinueAll,
 }
-
-impl ConsentUiState {
-    fn denied() -> Self {
-        Self {
-            eula: false,
-            pp: false,
-            tos: false,
-            focus: Focus::Cancel,
-        }
-    }
-
-    fn sanitize(mut self) -> Self {
-        if !self.eula {
-            self.tos = false;
-            self.pp = false;
-        }
-        self
-    }
-
-    async fn to_string(self) -> Result<String, ()> {
-        let current_secs = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-
-        if let Some((eula, tos, pp)) = get_current_docs().await {
-            Ok(format!(
-                "\
-            \"EULA=true\" indicates that you read, understood and accepted the End User Licence agreement. You can find our EULA at https://legal.tensamin.net/eula/\
-            \nEULA={}\
-            \nEULA-VERSION={}\
-            \nEULA-HASH={}\
-            \n\"PrivacyPolicy=true\" indicates that you read, understood and accepted the Privacy Policy. You can find our Privacy Policy at https://legal.tensamin.net/privacy-policy/\
-            \nPrivacyPolicy={}\
-            \nPrivacyPolicy-VERSION={}\
-            \nPrivacyPolicy-HASH={}\
-            \n\"ToS=true\" indicates that you read, understood and accepted the Terms of Service. You can find our Terms of Service at https://legal.tensamin.net/terms-of-service/\
-            \nToS={}\
-            \nToS-VERSION={}\
-            \nToS-HASH={}\
-            \nThis file reflects the current consent state used by the application.\
-            \nIt may be regenerated or overwritten by the application.\
-            \nThis file was last edited by Tensamin at:\
-            \nUNIX-SECOND={}\
-            ",
-                self.eula,
-                eula.get_version(),
-                eula.get_hash(),
-                self.tos,
-                tos.get_version(),
-                tos.get_hash(),
-                self.pp,
-                pp.get_version(),
-                pp.get_hash(),
-                current_secs
-            ))
-        } else {
-            Err(())
-        }
-    }
-
-    fn from_str(s: &str) -> Self {
-        let mut eula = false;
-        let mut pp = false;
-        let mut tos = false;
-
-        for line in s.lines() {
-            if let Some(v) = line.strip_prefix("EULA=") {
-                eula = v == "true";
-            } else if let Some(v) = line.strip_prefix("ToS=") {
-                tos = v == "true";
-            } else if let Some(v) = line.strip_prefix("PrivacyPolicy=") {
-                pp = v == "true";
-            }
-        }
-
-        Self {
-            eula,
-            pp,
-            tos,
-            focus: Focus::Cancel,
-        }
-        .sanitize()
-    }
-    fn can_continue(&self) -> bool {
-        self.eula
-    }
-    fn can_continue_all(&self) -> bool {
-        self.eula && self.pp && self.tos
-    }
-
-    fn next(&mut self) {
-        self.focus = match self.focus {
+impl Focus {
+    fn next(&mut self, state: ConsentUiState) {
+        *self = match self {
             Focus::Eula => Focus::Tos,
             Focus::Tos => Focus::Pp,
             Focus::Pp => Focus::Cancel,
             Focus::Cancel => {
-                if self.can_continue() {
+                if state.can_continue() {
                     Focus::Continue
                 } else {
                     Focus::Eula
                 }
             }
-            Focus::Continue => Focus::ContinueAll,
+            Focus::Continue => {
+                if state.can_continue_all() {
+                    Focus::ContinueAll
+                } else {
+                    Focus::Eula
+                }
+            }
             Focus::ContinueAll => Focus::Eula,
         };
     }
 
-    fn prev(&mut self) {
-        self.focus = match self.focus {
-            Focus::Eula => Focus::ContinueAll,
+    fn prev(&mut self, state: ConsentUiState) {
+        *self = match self {
+            Focus::Eula => {
+                if state.can_continue_all() {
+                    Focus::ContinueAll
+                } else if state.can_continue() {
+                    Focus::Continue
+                } else {
+                    Focus::Cancel
+                }
+            }
             Focus::Tos => Focus::Eula,
             Focus::Pp => Focus::Tos,
             Focus::Cancel => Focus::Pp,
@@ -195,15 +65,15 @@ impl ConsentUiState {
     }
 }
 
-async fn run_consent_ui() -> UserChoice {
+pub async fn run_consent_ui() -> UserChoice {
     let mut terminal = ratatui::init();
 
     let mut state = ConsentUiState {
         eula: false,
         tos: false,
         pp: false,
-        focus: Focus::Eula,
     };
+    let mut focus = Focus::Eula;
 
     let result = loop {
         let mut too_small = false;
@@ -311,9 +181,9 @@ async fn run_consent_ui() -> UserChoice {
                         )
                     };
                 let mut text_lines = vec![
-                    checkbox(eula_text, state.eula, state.focus == Focus::Eula, true),
-                    checkbox(tos_text, state.tos, state.focus == Focus::Tos, state.eula),
-                    checkbox(pp_text, state.pp, state.focus == Focus::Pp, state.eula),
+                    checkbox(eula_text, state.eula, focus == Focus::Eula, true),
+                    checkbox(tos_text, state.tos, focus == Focus::Tos, state.eula),
+                    checkbox(pp_text, state.pp, focus == Focus::Pp, state.eula),
                     Line::from(""),
                     Line::from("¹ Necessary, ² Optional"),
                 ];
@@ -395,11 +265,11 @@ async fn run_consent_ui() -> UserChoice {
                 }
                 match key.code {
                     KeyCode::Esc => break UserChoice::Deny,
-                    KeyCode::Up | KeyCode::Left => state.prev(),
-                    KeyCode::Down | KeyCode::Right | KeyCode::Tab => state.next(),
+                    KeyCode::Up | KeyCode::Left => focus.prev(state),
+                    KeyCode::Down | KeyCode::Right | KeyCode::Tab => focus.next(state),
                     KeyCode::Char('q') | KeyCode::Char('Q') => break UserChoice::Deny,
                     KeyCode::Char('o') | KeyCode::Char('O') => {
-                        let terms_type = match state.focus {
+                        let terms_type = match focus {
                             Focus::Eula => Type::EULA,
                             Focus::Tos => Type::TOS,
                             Focus::Pp => Type::PP,
@@ -412,13 +282,14 @@ async fn run_consent_ui() -> UserChoice {
                         } else {
                             terminal = FileViewer::new(
                                 terms_type.to_string(),
-                                "### A loading error occured",
+                                "### A loading error occured\
+                                \nTry reloading this site or retry in a moment.",
                             )
                             .force_popup(terminal);
                         }
                     }
                     KeyCode::Char('l') | KeyCode::Char('L') => {
-                        let terms_type = match state.focus {
+                        let terms_type = match focus {
                             Focus::Eula => Type::EULA,
                             Focus::Tos => Type::TOS,
                             Focus::Pp => Type::PP,
@@ -427,7 +298,7 @@ async fn run_consent_ui() -> UserChoice {
 
                         let _ = open::that(get_link(terms_type));
                     }
-                    KeyCode::Char(' ') => match state.focus {
+                    KeyCode::Char(' ') => match focus {
                         Focus::Eula => {
                             state.eula = !state.eula;
                             state.tos = false;
@@ -445,7 +316,7 @@ async fn run_consent_ui() -> UserChoice {
                         }
                         _ => {}
                     },
-                    KeyCode::Enter => match state.focus {
+                    KeyCode::Enter => match focus {
                         Focus::Cancel => break UserChoice::Deny,
                         Focus::Continue if state.can_continue() => break UserChoice::AcceptEULA,
                         Focus::ContinueAll if state.can_continue_all() => {
@@ -526,7 +397,7 @@ fn draw_buttons(f: &mut ratatui::Frame, area: Rect, state: &ConsentUiState) {
 
         let style = match focus {
             Focus::Cancel => {
-                if state.focus == Focus::Cancel {
+                if focus == &Focus::Cancel {
                     Style::default()
                         .fg(Color::Black)
                         .bg(Color::Red)
@@ -536,7 +407,7 @@ fn draw_buttons(f: &mut ratatui::Frame, area: Rect, state: &ConsentUiState) {
                 }
             }
             Focus::Continue => {
-                if state.focus == Focus::Continue && state.can_continue() {
+                if focus == &Focus::Continue && state.can_continue() {
                     Style::default()
                         .fg(Color::Black)
                         .bg(Color::Green)
@@ -548,7 +419,7 @@ fn draw_buttons(f: &mut ratatui::Frame, area: Rect, state: &ConsentUiState) {
                 }
             }
             Focus::ContinueAll => {
-                if state.focus == Focus::ContinueAll && state.can_continue_all() {
+                if focus == &Focus::ContinueAll && state.can_continue_all() {
                     Style::default()
                         .fg(Color::Black)
                         .bg(Color::Green)

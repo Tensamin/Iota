@@ -28,6 +28,7 @@ use crate::langu::language_creator;
 use crate::langu::language_manager::format;
 use crate::omikron::omikron_connection::{OMIKRON_CONNECTION, OmikronConnection};
 use crate::server::server::start;
+use crate::terms::consent_state;
 use crate::terms::terms_checker;
 use crate::users::user_manager;
 use crate::util::config_util::CONFIG;
@@ -48,7 +49,7 @@ async fn main() {
         *SHUTDOWN.write().await = false;
 
         // EULA
-        let (tos, pp) = terms_checker::ConsentManager::check().await;
+        let (tos, pp) = consent_state::ConsentManager::check().await;
         if !tos {
             println!("You need to accept our End User Licence Agreement before launching!");
             println!("You can find this at 'agreements'!");
