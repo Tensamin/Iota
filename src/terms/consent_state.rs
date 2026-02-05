@@ -1,5 +1,6 @@
 use crate::{
-    terms::{terms_checker::run_consent_ui, terms_getter::get_current_docs},
+    terms::terms_checker,
+    terms::terms_getter::get_current_docs,
     util::file_util::{load_file, save_file},
 };
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -8,20 +9,20 @@ pub struct ConsentManager;
 impl ConsentManager {
     pub async fn check() -> (bool, bool) {
         let file = load_file("", "agreements");
-        let existing = ConsentUiState::from_str(&file).sanitize();
+        let existing = ConsentState::from_str(&file).sanitize();
 
         let final_state = if existing.eula {
             existing
         } else {
-            let choice = run_consent_ui().await;
+            let choice = terms_checker::run_consent_ui().await;
             let state = match choice {
-                UserChoice::Deny => ConsentUiState::denied(),
-                UserChoice::AcceptEULA => ConsentUiState {
+                UserChoice::Deny => ConsentState::denied(),
+                UserChoice::AcceptEULA => ConsentState {
                     eula: true,
                     tos: false,
                     pp: false,
                 },
-                UserChoice::AcceptAll => ConsentUiState {
+                UserChoice::AcceptAll => ConsentState {
                     eula: true,
                     tos: true,
                     pp: true,
@@ -46,13 +47,13 @@ pub enum UserChoice {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct ConsentUiState {
+pub struct ConsentState {
     pub eula: bool,
     pub tos: bool,
     pub pp: bool,
 }
 
-impl ConsentUiState {
+impl ConsentState {
     fn denied() -> Self {
         Self {
             eula: false,

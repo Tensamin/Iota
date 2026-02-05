@@ -1,5 +1,6 @@
 use crate::terms::{
-    consent_state::{ConsentUiState, UserChoice},
+    consent_state::{ConsentState, UserChoice},
+    focus::Focus,
     md_viewer::FileViewer,
     terms_getter::{Type, get_link, get_terms},
 };
@@ -12,63 +13,10 @@ use ratatui::{
 };
 use std::time::Duration;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Focus {
-    Eula,
-    Tos,
-    Pp,
-    Cancel,
-    Continue,
-    ContinueAll,
-}
-impl Focus {
-    fn next(&mut self, state: ConsentUiState) {
-        *self = match self {
-            Focus::Eula => Focus::Tos,
-            Focus::Tos => Focus::Pp,
-            Focus::Pp => Focus::Cancel,
-            Focus::Cancel => {
-                if state.can_continue() {
-                    Focus::Continue
-                } else {
-                    Focus::Eula
-                }
-            }
-            Focus::Continue => {
-                if state.can_continue_all() {
-                    Focus::ContinueAll
-                } else {
-                    Focus::Eula
-                }
-            }
-            Focus::ContinueAll => Focus::Eula,
-        };
-    }
-
-    fn prev(&mut self, state: ConsentUiState) {
-        *self = match self {
-            Focus::Eula => {
-                if state.can_continue_all() {
-                    Focus::ContinueAll
-                } else if state.can_continue() {
-                    Focus::Continue
-                } else {
-                    Focus::Cancel
-                }
-            }
-            Focus::Tos => Focus::Eula,
-            Focus::Pp => Focus::Tos,
-            Focus::Cancel => Focus::Pp,
-            Focus::Continue => Focus::Cancel,
-            Focus::ContinueAll => Focus::Continue,
-        };
-    }
-}
-
 pub async fn run_consent_ui() -> UserChoice {
     let mut terminal = ratatui::init();
 
-    let mut state = ConsentUiState {
+    let mut state = ConsentState {
         eula: false,
         tos: false,
         pp: false,
@@ -369,7 +317,7 @@ fn draw_button(f: &mut ratatui::Frame, area: Rect, label: &str, style: Style) {
         .block(Block::default().borders(Borders::ALL));
     f.render_widget(p, area);
 }
-fn draw_buttons(f: &mut ratatui::Frame, area: Rect, state: &ConsentUiState) {
+fn draw_buttons(f: &mut ratatui::Frame, area: Rect, state: &ConsentState) {
     let buttons = vec![
         ("[Q] Cancel", Focus::Cancel),
         ("Continue", Focus::Continue),
