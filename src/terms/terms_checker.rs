@@ -13,7 +13,7 @@ use ratatui::{
 };
 use std::time::Duration;
 
-pub async fn run_consent_ui(consent: ConsentState) -> ConsentState {
+pub async fn run_consent_ui(mut consent: ConsentState) -> ConsentState {
     let mut terminal = ratatui::init();
 
     let (mut eula, mut tos, mut pp) = (false, false, false);
@@ -277,19 +277,19 @@ pub async fn run_consent_ui(consent: ConsentState) -> ConsentState {
 
     match result {
         UserChoice::AcceptAll => {
-            consent.accepted_eula == true;
-            consent.accepted_tos == true;
-            consent.accepted_pp == true;
+            consent.accepted_eula = true;
+            consent.accepted_tos = true;
+            consent.accepted_pp = true;
         }
         UserChoice::AcceptEULA => {
-            consent.accepted_eula == true;
-            consent.accepted_tos == true;
-            consent.accepted_pp == true;
+            consent.accepted_eula = true;
+            consent.accepted_tos = true;
+            consent.accepted_pp = true;
         }
         UserChoice::Deny => {
-            consent.accepted_eula == false;
-            consent.accepted_tos == false;
-            consent.accepted_pp == false;
+            consent.accepted_eula = false;
+            consent.accepted_tos = false;
+            consent.accepted_pp = false;
         }
     };
     consent

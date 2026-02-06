@@ -22,6 +22,17 @@ impl Doc {
         }
     }
 
+    pub fn equals_some(&self, other: &Option<Self>) -> bool {
+        if let Some(other) = other {
+            self.get_version() == other.get_version() && self.get_hash() == other.get_hash()
+        } else {
+            false
+        }
+    }
+    pub fn equals(&self, other: &Self) -> bool {
+        self.get_version() == other.get_version() && self.get_hash() == other.get_hash()
+    }
+
     pub fn get_version(&self) -> String {
         self.version.clone()
     }

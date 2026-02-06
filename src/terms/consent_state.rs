@@ -1,6 +1,10 @@
 use crate::{
-    terms::{doc::Doc, terms_checker, terms_getter::Type},
-    util::file_util::{load_file, save_file},
+    terms::{
+        doc::Doc,
+        terms_checker,
+        terms_getter::{Type, get_current_docs, get_newest_docs},
+    },
+    util::file_util::load_file,
 };
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -8,21 +12,44 @@ pub struct ConsentManager;
 impl ConsentManager {
     pub async fn check() -> (bool, bool) {
         let file = load_file("", "agreements");
-        let existing = ConsentState::from_str(&file).sanitize();
-
-        let final_state = if existing.accepted_eula {
-            existing
+        let file_state = ConsentState::from_str(&file).sanitize();
+        let accepted_state = if !&file_state.accepted_eula {
+            terms_checker::run_consent_ui(file_state).await
         } else {
-            let state = terms_checker::run_consent_ui(existing).await.sanitize();
-            let string = state.clone().to_string().await;
-            save_file("", "agreements", &string);
-            state
+            file_state
         };
 
-        (
-            final_state.accepted_eula,
-            final_state.accepted_pp && final_state.accepted_tos,
-        )
+        if let Some((current_eula, current_tos, current_privacy)) = get_current_docs().await {
+            if current_eula.equals_some(&accepted_state.eula) {
+                if current_tos.equals_some(&accepted_state.tos)
+                    && current_privacy.equals_some(&accepted_state.pp)
+                {
+                    (true, true)
+                } else {
+                    (true, false)
+                }
+            } else {
+                (false, false)
+            }
+        } else {
+            println!("There was an error while loading our EULA, please retry later!");
+            (false, false)
+        }
+    }
+
+    pub async fn check_updates() -> Option<(Option<Doc>, Option<Doc>, Option<Doc>)> {
+        let file = load_file("", "agreements");
+        let accepted_state = ConsentState::from_str(&file).sanitize();
+
+        if let (
+            Some((current_eula, current_tos, current_privacy)),
+            Some((newest_eula, newest_tos, newest_privacy)),
+        ) = (get_current_docs().await, get_newest_docs().await)
+        {
+            None
+        } else {
+            None
+        }
     }
 }
 
