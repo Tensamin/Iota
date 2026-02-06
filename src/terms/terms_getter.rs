@@ -2,7 +2,7 @@ use json::JsonValue::Object;
 
 use crate::terms::doc::Doc;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Type {
     EULA,
     TOS,
@@ -87,7 +87,6 @@ pub async fn get_newest_docs() -> Option<(Doc, Doc, Doc)> {
         None
     }
 }
-
 pub async fn get_terms(terms_type: Type) -> Option<String> {
     let body = reqwest::get(format!(
         "https://legal.tensamin.net/api/text/{}/",

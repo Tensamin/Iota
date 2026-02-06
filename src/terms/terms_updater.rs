@@ -1,5 +1,6 @@
 use crate::terms::{
-    consent_state::UserChoice,
+    consent_state::{ConsentState, UserChoice},
+    doc::Doc,
     focus::Focus,
     md_viewer::FileViewer,
     terms_getter::{Type, get_link, get_terms},
@@ -13,10 +14,29 @@ use ratatui::{
 };
 use std::time::Duration;
 
-pub async fn run_consent_ui() -> UserChoice {
+pub async fn run_consent_ui(
+    mut consent: ConsentState,
+    consent_eula: Result<Option<Doc>, Doc>,
+    consent_tos: Result<Option<Doc>, Doc>,
+    consent_pp: Result<Option<Doc>, Doc>,
+) -> ConsentState {
     let mut terminal = ratatui::init();
-
-    let (mut eula, mut tos, mut pp) = (false, false, false);
+    let (eula_needed, eula_future, future_eula) = match consent_eula {
+        Ok(Some(future)) => (true, true, Some(future)),
+        Ok(None) => (false, false, None),
+        Err(future) => (true, false, Some(future)),
+    };
+    let (tos_needed, tos_future, future_tos) = match consent_tos {
+        Ok(Some(future)) => (true, true, Some(future)),
+        Ok(None) => (false, false, None),
+        Err(future) => (true, false, Some(future)),
+    };
+    let (pp_needed, pp_future, future_privacy) = match consent_pp {
+        Ok(Some(future)) => (true, true, Some(future)),
+        Ok(None) => (false, false, None),
+        Err(future) => (true, false, Some(future)),
+    };
+    let (mut eula, mut tos, mut pp) = (!eula_needed, !tos_needed, !pp_needed);
     let mut focus = Focus::Eula;
 
     let result = loop {
@@ -51,28 +71,68 @@ pub async fn run_consent_ui() -> UserChoice {
                         width: content_width,
                         height: content_height,
                     });
-                let eula_text = if size.width < 70 {
-                    "EULA ¹ (https://legal.tensamin.net/eula/)"
-                } else {
-                    "End User Licence Agreement ¹ (https://legal.tensamin.net/eula/)"
-                };
-                let tos_text = if size.width < 72 {
-                    "ToS ² (https://legal.tensamin.net/terms-of-service/)"
-                } else {
-                    "Terms of Service ² (https://legal.tensamin.net/terms-of-service/)"
-                };
-                let pp_text = if size.width < 68 {
-                    "PP ² (https://legal.tensamin.net/privacy-policy/)"
-                } else {
-                    "Privacy Policy ² (https://legal.tensamin.net/privacy-policy/)"
-                };
+
+
+                let mut text_lines = Vec::new();
+
+
+                if eula_needed {
+                    if eula_future {
+                        if size.width < 70 {
+                            text_lines.push(checkbox("EULA ¹³ (https://legal.tensamin.net/eula/newest/)", eula, focus == Focus::Eula, true));
+                        } else {
+                            text_lines.push(checkbox("End User Licence Agreement ¹³ (https://legal.tensamin.net/eula/newest/)", eula, focus == Focus::Eula, true));
+                        }
+                    } else {
+                        if size.width < 70 {
+                            text_lines.push(checkbox("EULA ¹ (https://legal.tensamin.net/eula/newest/)", eula, focus == Focus::Eula, true));
+                        } else {
+                            text_lines.push(checkbox("End User Licence Agreement ¹ (https://legal.tensamin.net/eula/newest/)", eula, focus == Focus::Eula, true));
+                        }
+                    }
+                }
+
+                if tos_needed {
+                    if tos_future {
+                        if size.width < 70 {
+                            text_lines.push(checkbox("ToS ²³ (https://legal.tensamin.net/terms-of-service/newest/)", tos, focus == Focus::Tos, eula));
+                        } else {
+                            text_lines.push(checkbox("Terms of Service ²³ (https://legal.tensamin.net/terms-of-service/newest/)", tos, focus == Focus::Tos, eula));
+                        }
+                    } else {
+                        if size.width < 70 {
+                            text_lines.push(checkbox("ToS ² (https://legal.tensamin.net/terms-of-service/newest/)", tos, focus == Focus::Tos, eula));
+                        } else {
+                            text_lines.push(checkbox("Terms of Service ² (https://legal.tensamin.net/terms-of-service/newest/)", tos, focus == Focus::Tos, eula));
+                        }
+                    }
+                }
+
+                if pp_needed {
+                    if pp_future {
+                        if size.width < 70 {
+                            text_lines.push(checkbox("PP ²³ (https://legal.tensamin.net/privacy-policy/newest/)", pp, focus == Focus::Pp, eula));
+                        } else {
+                            text_lines.push(checkbox("Privacy Policy ²³ (https://legal.tensamin.net/privacy-policy/newest/)", pp, focus == Focus::Pp, eula));
+                        }
+                    } else {
+                        if size.width < 70 {
+                            text_lines.push(checkbox("PP ² (https://legal.tensamin.net/privacy-policy/newest/)", pp, focus == Focus::Pp, pp));
+                        } else {
+                            text_lines.push(checkbox("Privacy Policy ² (https://legal.tensamin.net/privacy-policy/newest/)", pp, focus == Focus::Pp, eula));
+                        }
+                    }
+                }
+
+                text_lines.push(Line::from(""));
+                text_lines.push(Line::from("¹ Necessary, ² Optional, ³ Future"));
+                text_lines.push(Line::from(""));
 
                 let (mut optional_lines, agree_lines): (Vec<i16>, Vec<&str>) =
                     if size.width > 143 {
                         (
                             vec![7, 3, 7, 4],
                             vec![
-                                "",
                                 "By selecting Continue, you confirm that you have read, understood and agree to the End User License Agreement and applicable Terms of Service.",
                                 "",
                                 "Tensamin services require acceptance of the Terms of Service and Privacy Policy.",
@@ -97,7 +157,6 @@ pub async fn run_consent_ui() -> UserChoice {
                         (
                             vec![8, 3, 8, 4],
                             vec![
-                                "",
                                 "By selecting Continue, you confirm that you have read, understood and",
                                 "agree to the End User License Agreement and applicable Terms of Service.",
                                 "",
@@ -111,7 +170,6 @@ pub async fn run_consent_ui() -> UserChoice {
                         (
                             vec![9, 3, 10, 4],
                             vec![
-                                "",
                                 "By selecting Continue, you confirm that you have",
                                 "read, understood and agree to the End User License",
                                 "Agreement and applicable Terms of Service.",
@@ -124,13 +182,8 @@ pub async fn run_consent_ui() -> UserChoice {
                             ]
                         )
                     };
-                let mut text_lines = vec![
-                    checkbox(eula_text, eula, focus == Focus::Eula, true),
-                    checkbox(tos_text, tos, focus == Focus::Tos, eula),
-                    checkbox(pp_text, pp, focus == Focus::Pp, eula),
-                    Line::from(""),
-                    Line::from("¹ Necessary, ² Optional"),
-                ];
+
+
 
                 for line in agree_lines {
                     text_lines.insert(text_lines.len(), Line::from(line));
@@ -191,10 +244,10 @@ pub async fn run_consent_ui() -> UserChoice {
                 }
 
                 let consent_block = Paragraph::new(Text::from(text_lines))
-                    .block(Block::default().title(" Tensamin User Consent [Q to Quit] ").borders(Borders::ALL));
+                    .block(Block::default().title(format!(" Update Tensamin User Consent [Q to Quit] {}, {}, {}", pp_needed, eula_needed, tos_needed)).borders(Borders::ALL));
                 f.render_widget(consent_block, chunks[0]);
 
-                draw_buttons(f, chunks[1], (eula, tos, pp));
+                draw_buttons(f, chunks[1], focus, (eula, tos, pp));
             })
             .unwrap();
 
@@ -275,7 +328,23 @@ pub async fn run_consent_ui() -> UserChoice {
     };
     ratatui::restore();
 
-    result
+    match result {
+        UserChoice::AcceptAll => {
+            consent.accepted_eula = true;
+            consent.accepted_tos = true;
+            consent.accepted_pp = true;
+            consent.eula = future_eula;
+            consent.tos = future_tos;
+            consent.privacy = future_privacy;
+        }
+        UserChoice::AcceptEULA => {
+            consent.accepted_eula = true;
+            consent.eula = future_eula;
+        }
+        UserChoice::Deny => {}
+    };
+
+    consent
 }
 
 #[allow(mismatched_lifetime_syntaxes)]
@@ -313,7 +382,12 @@ fn draw_button(f: &mut ratatui::Frame, area: Rect, label: &str, style: Style) {
         .block(Block::default().borders(Borders::ALL));
     f.render_widget(p, area);
 }
-fn draw_buttons(f: &mut ratatui::Frame, area: Rect, state: (bool, bool, bool)) {
+fn draw_buttons(
+    f: &mut ratatui::Frame,
+    area: Rect,
+    current_focus: Focus,
+    state: (bool, bool, bool),
+) {
     let buttons = vec![
         ("[Q] Cancel", Focus::Cancel),
         ("Continue", Focus::Continue),
@@ -339,9 +413,11 @@ fn draw_buttons(f: &mut ratatui::Frame, area: Rect, state: (bool, bool, bool)) {
         };
         x += width;
 
+        let is_focused = current_focus == *focus;
+
         let style = match focus {
             Focus::Cancel => {
-                if focus == &Focus::Cancel {
+                if is_focused {
                     Style::default()
                         .fg(Color::Black)
                         .bg(Color::Red)
@@ -350,20 +426,22 @@ fn draw_buttons(f: &mut ratatui::Frame, area: Rect, state: (bool, bool, bool)) {
                     Style::default().fg(Color::Red)
                 }
             }
+
             Focus::Continue => {
-                if focus == &Focus::Continue && state.0 {
+                if is_focused && state.0 {
                     Style::default()
                         .fg(Color::Black)
                         .bg(Color::Green)
                         .add_modifier(Modifier::BOLD)
-                } else if state.0 && state.1 && state.2 {
-                    Style::default().fg(Color::Green)
+                } else if state.0 {
+                    Style::default().fg(Color::Green) // enabled but not focused
                 } else {
                     Style::default().fg(Color::DarkGray)
                 }
             }
+
             Focus::ContinueAll => {
-                if focus == &Focus::ContinueAll && state.0 && state.1 && state.2 {
+                if is_focused && state.0 && state.1 && state.2 {
                     Style::default()
                         .fg(Color::Black)
                         .bg(Color::Green)
@@ -374,13 +452,13 @@ fn draw_buttons(f: &mut ratatui::Frame, area: Rect, state: (bool, bool, bool)) {
                     Style::default().fg(Color::DarkGray)
                 }
             }
+
             _ => Style::default().fg(Color::DarkGray),
         };
 
         draw_button(f, chunk, label, style);
     }
 }
-
 fn compute_widths(area_width: u16, min_widths: &[u16]) -> Vec<u16> {
     let mut widths = vec![0; min_widths.len()];
     let mut remaining: Vec<usize> = (0..min_widths.len()).collect();

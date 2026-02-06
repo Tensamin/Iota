@@ -2,7 +2,7 @@ use crate::terms::{
     consent_state::{ConsentState, UserChoice},
     focus::Focus,
     md_viewer::FileViewer,
-    terms_getter::{Type, get_link, get_terms},
+    terms_getter::{Type, get_current_docs, get_link, get_terms},
 };
 use crossterm::event::{self, Event, KeyCode};
 use ratatui::{
@@ -52,19 +52,19 @@ pub async fn run_consent_ui(mut consent: ConsentState) -> ConsentState {
                         height: content_height,
                     });
                 let eula_text = if size.width < 70 {
-                    "EULA ¹ (https://legal.tensamin.net/eula/)"
+                    "EULA ¹ (https://legal.tensamin.net/eula/newest/)"
                 } else {
-                    "End User Licence Agreement ¹ (https://legal.tensamin.net/eula/)"
+                    "End User Licence Agreement ¹ (https://legal.tensamin.net/eula/newest/)"
                 };
                 let tos_text = if size.width < 72 {
-                    "ToS ² (https://legal.tensamin.net/terms-of-service/)"
+                    "ToS ² (https://legal.tensamin.net/terms-of-service/newest/)"
                 } else {
-                    "Terms of Service ² (https://legal.tensamin.net/terms-of-service/)"
+                    "Terms of Service ² (https://legal.tensamin.net/terms-of-service/newest/)"
                 };
                 let pp_text = if size.width < 68 {
-                    "PP ² (https://legal.tensamin.net/privacy-policy/)"
+                    "PP ² (https://legal.tensamin.net/privacy-policy/newest/)"
                 } else {
-                    "Privacy Policy ² (https://legal.tensamin.net/privacy-policy/)"
+                    "Privacy Policy ² (https://legal.tensamin.net/privacy-policy/newest/)"
                 };
 
                 let (mut optional_lines, agree_lines): (Vec<i16>, Vec<&str>) =
@@ -275,6 +275,12 @@ pub async fn run_consent_ui(mut consent: ConsentState) -> ConsentState {
     };
     ratatui::restore();
 
+    if let Some((eula, tos, privacy)) = get_current_docs().await {
+        consent.eula = Some(eula);
+        consent.tos = Some(tos);
+        consent.privacy = Some(privacy);
+    }
+
     match result {
         UserChoice::AcceptAll => {
             consent.accepted_eula = true;
@@ -292,6 +298,7 @@ pub async fn run_consent_ui(mut consent: ConsentState) -> ConsentState {
             consent.accepted_pp = false;
         }
     };
+
     consent
 }
 

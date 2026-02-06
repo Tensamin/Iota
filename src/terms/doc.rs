@@ -2,12 +2,12 @@ use json::{JsonValue, object::Object};
 
 use crate::{terms::terms_getter::Type, util::file_util::load_file};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[allow(unused)]
 pub struct Doc {
     version: String,
     hash: String,
-    doc_type: Type,
+    pub doc_type: Type,
     timestamp: u64,
 }
 

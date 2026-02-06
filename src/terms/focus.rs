@@ -1,4 +1,4 @@
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Focus {
     Eula,
     Tos,
@@ -7,6 +7,7 @@ pub enum Focus {
     Continue,
     ContinueAll,
 }
+
 impl Focus {
     pub fn next(&mut self, state: (bool, bool, bool)) {
         *self = match self {
