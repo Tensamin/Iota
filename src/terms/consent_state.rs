@@ -13,13 +13,14 @@ pub struct ConsentManager;
 impl ConsentManager {
     pub async fn check() -> (bool, bool) {
         let file = load_file("", "agreements");
-        let mut file_state = ConsentState::from_str(&file).sanitize();
+        let (mut file_state, changed) = ConsentState::from_str(&file).sanitize();
+
+        if changed {
+            save_file("", "agreements", &file_state.to_string());
+        }
 
         if !file_state.accepted_eula {
             file_state = terms_checker::run_consent_ui(file_state).await;
-
-            println!("{}", &file_state.clone().sanitize().to_string());
-            println!("-----------------------");
 
             save_file("", "agreements", &file_state.to_string());
         }
@@ -34,17 +35,16 @@ impl ConsentManager {
                 || matches!(privacy_update, UpdateDecision::Forced(_));
 
             let updater_logic = async move {
-                let state_to_update = terms_updater::run_consent_ui(
+                let (state_to_update, _) = terms_updater::run_consent_ui(
                     file_state,
                     eula_update,
                     tos_update,
                     privacy_update,
                 )
-                .await;
+                .await
+                .sanitize();
 
-                println!("{}", &state_to_update.clone().sanitize().to_string());
-
-                save_file("", "agreements", &state_to_update.sanitize().to_string());
+                save_file("", "agreements", &state_to_update.to_string());
             };
             // ======================================================== //
             //  TODO: Implement UI Drawing order, draw update As PoPup  //
@@ -56,7 +56,11 @@ impl ConsentManager {
             //}
         }
 
-        let final_state = ConsentState::from_str(&load_file("", "agreements")).sanitize();
+        let file = load_file("", "agreements");
+        let (final_state, changed) = ConsentState::from_str(&file).sanitize();
+        if changed {
+            save_file("", "agreements", &final_state.to_string());
+        }
         (
             final_state.accepted_eula,
             final_state.accepted_tos && final_state.accepted_pp,
@@ -72,8 +76,10 @@ impl ConsentManager {
         UpdateDecision,
     )> {
         let file = load_file("", "agreements");
-        let accepted_state = ConsentState::from_str(&file).sanitize();
-
+        let (accepted_state, changed) = ConsentState::from_str(&file).sanitize();
+        if changed {
+            save_file("", "agreements", &accepted_state.to_string());
+        }
         if let (
             Some((current_eula, current_tos, current_privacy)),
             Some((newest_eula, newest_tos, newest_privacy)),
@@ -83,8 +89,12 @@ impl ConsentManager {
                 if current_eula.equals(&newest_eula) {
                     UpdateDecision::NoChange
                 } else {
-                    UpdateDecision::Future {
-                        newest: newest_eula,
+                    if newest_eula.equals_some(&accepted_state.future_eula) {
+                        UpdateDecision::NoChange
+                    } else {
+                        UpdateDecision::Future {
+                            newest: newest_eula,
+                        }
                     }
                 }
             } else if newest_eula.equals_some(&accepted_state.eula) {
@@ -93,35 +103,53 @@ impl ConsentManager {
                 UpdateDecision::Forced(current_eula)
             };
 
-            let tos_update: UpdateDecision = if newest_tos.equals_some(&accepted_state.tos) {
+            let tos_update: UpdateDecision = if !accepted_state.accepted_tos
+                || newest_tos.equals_some(&accepted_state.tos)
+            {
                 UpdateDecision::NoChange
             } else if accepted_state.accepted_tos && current_tos.equals_some(&accepted_state.tos) {
                 if current_tos.equals(&newest_tos) {
                     UpdateDecision::NoChange
                 } else {
-                    UpdateDecision::Future { newest: newest_tos }
+                    if newest_tos.equals_some(&accepted_state.future_tos) {
+                        UpdateDecision::NoChange
+                    } else {
+                        UpdateDecision::Future { newest: newest_tos }
+                    }
                 }
             } else {
                 UpdateDecision::Forced(current_tos)
             };
 
-            let privacy_update: UpdateDecision =
-                if newest_privacy.equals_some(&accepted_state.privacy) {
+            let privacy_update: UpdateDecision = if !accepted_state.accepted_pp
+                || newest_privacy.equals_some(&accepted_state.privacy)
+            {
+                UpdateDecision::NoChange
+            } else if accepted_state.accepted_pp
+                && current_privacy.equals_some(&accepted_state.privacy)
+            {
+                if current_privacy.equals(&newest_privacy) {
                     UpdateDecision::NoChange
-                } else if accepted_state.accepted_pp
-                    && current_privacy.equals_some(&accepted_state.privacy)
-                {
-                    if current_privacy.equals(&newest_privacy) {
+                } else {
+                    if newest_privacy.equals_some(&accepted_state.future_privacy) {
                         UpdateDecision::NoChange
                     } else {
                         UpdateDecision::Future {
                             newest: newest_privacy,
                         }
                     }
-                } else {
-                    UpdateDecision::Forced(current_privacy)
-                };
-            Some((eula_update, tos_update, privacy_update))
+                }
+            } else {
+                UpdateDecision::Forced(current_privacy)
+            };
+            match (&eula_update, &tos_update, &privacy_update) {
+                (
+                    &UpdateDecision::NoChange,
+                    &UpdateDecision::NoChange,
+                    &UpdateDecision::NoChange,
+                ) => None,
+                _ => Some((eula_update, tos_update, privacy_update)),
+            }
         } else {
             None
         }
@@ -158,12 +186,41 @@ pub struct ConsentState {
 }
 
 impl ConsentState {
-    fn sanitize(mut self) -> Self {
+    fn sanitize(mut self) -> (Self, bool) {
+        let mut changed = false;
+        let current_secs = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        if let Some(future_eula) = self.future_eula.clone() {
+            if future_eula.get_time() < current_secs {
+                self.eula = Some(future_eula);
+                self.future_eula = None;
+                changed = true;
+            }
+        }
+        if let Some(future_tos) = self.future_tos.clone() {
+            if future_tos.get_time() < current_secs {
+                self.tos = Some(future_tos);
+                self.future_tos = None;
+                changed = true;
+            }
+        }
+        if let Some(future_privacy) = self.future_privacy.clone() {
+            if future_privacy.get_time() < current_secs {
+                self.privacy = Some(future_privacy);
+                self.future_privacy = None;
+                changed = true;
+            }
+        }
+
         if !self.accepted_eula {
             self.accepted_tos = false;
             self.accepted_pp = false;
+            changed = true;
         }
-        self
+        (self, changed)
     }
 
     pub fn to_string(&self) -> String {
@@ -325,7 +382,7 @@ impl ConsentState {
         let future_eula_time = future_eula_time.parse::<u64>().unwrap_or(0);
         let future_tos_time = future_tos_time.parse::<u64>().unwrap_or(0);
         let future_pp_time = future_pp_time.parse::<u64>().unwrap_or(0);
-        Self {
+        let (state, _) = Self {
             accepted_eula: eula,
             eula: Some(Doc::new(eula_version, eula_hash, Type::EULA, unix)),
             accepted_pp: pp,
@@ -363,6 +420,8 @@ impl ConsentState {
                 None
             },
         }
-        .sanitize()
+        .sanitize();
+
+        state
     }
 }

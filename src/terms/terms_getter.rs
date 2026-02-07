@@ -29,6 +29,9 @@ impl Type {
 pub fn get_link(terms_type: Type) -> String {
     format!("https://legal.tensamin.net/{}/", terms_type.to_str())
 }
+pub fn get_newest_link(terms_type: Type) -> String {
+    format!("https://legal.tensamin.net/{}/newest/", terms_type.to_str())
+}
 
 pub async fn get_current_docs() -> Option<(Doc, Doc, Doc)> {
     let body = reqwest::get("https://legal.tensamin.net/api/current/")

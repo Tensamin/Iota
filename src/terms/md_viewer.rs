@@ -98,7 +98,7 @@ impl FileViewer {
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title(self.title.as_str()),
+                    .title(format!("{} - [Q to close]", self.title.as_str(),)),
             )
             .wrap(Wrap { trim: false })
             .scroll((self.scroll, 0));
