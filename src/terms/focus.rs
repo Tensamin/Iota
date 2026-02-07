@@ -9,45 +9,17 @@ pub enum Focus {
 }
 
 impl Focus {
-    pub fn next(&mut self, state: (bool, bool, bool)) {
-        *self = match self {
-            Focus::Eula => Focus::Tos,
-            Focus::Tos => Focus::Pp,
-            Focus::Pp => Focus::Cancel,
-            Focus::Cancel => {
-                if state.0 {
-                    Focus::Continue
-                } else {
-                    Focus::Eula
-                }
-            }
-            Focus::Continue => {
-                if state.0 && state.1 && state.2 {
-                    Focus::ContinueAll
-                } else {
-                    Focus::Eula
-                }
-            }
-            Focus::ContinueAll => Focus::Eula,
-        };
+    pub fn next(&mut self, order: &[Focus]) {
+        if let Some(pos) = order.iter().position(|&f| f == *self) {
+            let next_pos = (pos + 1) % order.len();
+            *self = order[next_pos];
+        }
     }
 
-    pub fn prev(&mut self, state: (bool, bool, bool)) {
-        *self = match self {
-            Focus::Eula => {
-                if state.0 && state.1 && state.2 {
-                    Focus::ContinueAll
-                } else if state.0 {
-                    Focus::Continue
-                } else {
-                    Focus::Cancel
-                }
-            }
-            Focus::Tos => Focus::Eula,
-            Focus::Pp => Focus::Tos,
-            Focus::Cancel => Focus::Pp,
-            Focus::Continue => Focus::Cancel,
-            Focus::ContinueAll => Focus::Continue,
-        };
+    pub fn prev(&mut self, order: &[Focus]) {
+        if let Some(pos) = order.iter().position(|&f| f == *self) {
+            let prev_pos = if pos == 0 { order.len() - 1 } else { pos - 1 };
+            *self = order[prev_pos];
+        }
     }
 }

@@ -8,7 +8,6 @@ use crate::{
     util::file_util::{load_file, save_file},
 };
 use std::time::{SystemTime, UNIX_EPOCH};
-use tokio::task;
 
 pub struct ConsentManager;
 impl ConsentManager {
@@ -30,7 +29,9 @@ impl ConsentManager {
         }
 
         if let Some((eula_update, tos_update, privacy_update)) = Self::get_updates().await {
-            let is_forced = eula_update.is_err() || tos_update.is_err() || privacy_update.is_err();
+            let _is_forced = matches!(eula_update, UpdateDecision::Forced(_))
+                || matches!(tos_update, UpdateDecision::Forced(_))
+                || matches!(privacy_update, UpdateDecision::Forced(_));
 
             let updater_logic = async move {
                 let state_to_update = terms_updater::run_consent_ui(
@@ -45,12 +46,14 @@ impl ConsentManager {
 
                 save_file("", "agreements", &state_to_update.sanitize().to_string());
             };
-
-            if is_forced {
-                updater_logic.await;
-            } else {
-                task::spawn(updater_logic);
-            }
+            // ======================================================== //
+            //  TODO: Implement UI Drawing order, draw update As PoPup  //
+            // ======================================================== //
+            //if is_forced {
+            updater_logic.await;
+            //} else {
+            //task::spawn(updater_logic);
+            //}
         }
 
         let final_state = ConsentState::from_str(&load_file("", "agreements")).sanitize();
@@ -64,9 +67,9 @@ impl ConsentManager {
         // Ok(None) indicates no update
         // Ok(Some) Indicates a future update
         // Err indicates a update that has to be accepted before the programm can continue
-        Result<Option<Doc>, Doc>,
-        Result<Option<Doc>, Doc>,
-        Result<Option<Doc>, Doc>,
+        UpdateDecision,
+        UpdateDecision,
+        UpdateDecision,
     )> {
         let file = load_file("", "agreements");
         let accepted_state = ConsentState::from_str(&file).sanitize();
@@ -76,46 +79,47 @@ impl ConsentManager {
             Some((newest_eula, newest_tos, newest_privacy)),
         ) = (get_current_docs().await, get_newest_docs().await)
         {
-            let eula_update: Result<Option<Doc>, Doc> =
-                if current_eula.equals_some(&accepted_state.eula) {
-                    if current_eula.equals(&newest_eula) {
-                        Ok(None)
-                    } else {
-                        Ok(Some(newest_eula))
+            let eula_update: UpdateDecision = if current_eula.equals_some(&accepted_state.eula) {
+                if current_eula.equals(&newest_eula) {
+                    UpdateDecision::NoChange
+                } else {
+                    UpdateDecision::Future {
+                        newest: newest_eula,
                     }
-                } else if newest_eula.equals_some(&accepted_state.eula) {
-                    Ok(None)
-                } else {
-                    Err(current_eula)
-                };
-
-            let tos_update: Result<Option<Doc>, Doc> = if newest_tos
-                .equals_some(&accepted_state.tos)
-            {
-                Ok(None)
-            } else if accepted_state.accepted_tos && current_tos.equals_some(&accepted_state.tos) {
-                if current_tos.equals(&newest_tos) {
-                    Ok(None)
-                } else {
-                    Ok(Some(newest_tos))
                 }
+            } else if newest_eula.equals_some(&accepted_state.eula) {
+                UpdateDecision::NoChange
             } else {
-                Err(current_tos)
+                UpdateDecision::Forced(current_eula)
             };
 
-            let privacy_update: Result<Option<Doc>, Doc> =
+            let tos_update: UpdateDecision = if newest_tos.equals_some(&accepted_state.tos) {
+                UpdateDecision::NoChange
+            } else if accepted_state.accepted_tos && current_tos.equals_some(&accepted_state.tos) {
+                if current_tos.equals(&newest_tos) {
+                    UpdateDecision::NoChange
+                } else {
+                    UpdateDecision::Future { newest: newest_tos }
+                }
+            } else {
+                UpdateDecision::Forced(current_tos)
+            };
+
+            let privacy_update: UpdateDecision =
                 if newest_privacy.equals_some(&accepted_state.privacy) {
-                    Ok(None)
+                    UpdateDecision::NoChange
                 } else if accepted_state.accepted_pp
                     && current_privacy.equals_some(&accepted_state.privacy)
                 {
                     if current_privacy.equals(&newest_privacy) {
-                        Ok(None)
+                        UpdateDecision::NoChange
                     } else {
-                        Ok(Some(newest_privacy))
+                        UpdateDecision::Future {
+                            newest: newest_privacy,
+                        }
                     }
                 } else {
-                    Err(current_privacy)
+                    UpdateDecision::Forced(current_privacy)
                 };
             Some((eula_update, tos_update, privacy_update))
         } else {
@@ -131,14 +135,26 @@ pub enum UserChoice {
     AcceptAll,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum UpdateDecision {
+    NoChange,
+    Future { newest: Doc },
+    Forced(Doc),
+}
+
 #[derive(Debug, Clone)]
 pub struct ConsentState {
     pub eula: Option<Doc>,
     pub accepted_eula: bool,
+    pub future_eula: Option<Doc>,
+
     pub tos: Option<Doc>,
     pub accepted_tos: bool,
+    pub future_tos: Option<Doc>,
+
     pub privacy: Option<Doc>,
     pub accepted_pp: bool,
+    pub future_privacy: Option<Doc>,
 }
 
 impl ConsentState {
@@ -165,12 +181,6 @@ impl ConsentState {
         );
 
         if let Some(eula) = &self.eula {
-            println!(
-                "EULA: {}, {}, {}",
-                self.accepted_eula,
-                eula.get_version(),
-                eula.get_hash()
-            );
             file_out.push_str(&format!("\
             \n\"EULA=true\" indicates that you read, understood and accepted Tensamin's End User Licence agreement. You can find our EULA at https://legal.tensamin.net/eula/\
             \nEULA={}\
@@ -204,6 +214,44 @@ impl ConsentState {
                 \nEULA=false\
                 ");
         }
+
+        if let Some(eula) = &self.future_eula {
+            file_out.push_str(&format!(
+                "\
+                \nFUTURE-EULA-VERSION={}\
+                \nFUTURE-EULA-HASH={}\
+                \nFUTURE-EULA-TIME={}\
+                ",
+                eula.get_version(),
+                eula.get_hash(),
+                eula.get_time()
+            ));
+        }
+        if let Some(tos) = &self.future_tos {
+            file_out.push_str(&format!(
+                "\
+                \nFUTURE-Terms-of-Service-VERSION={}\
+                \nFUTURE-Terms-of-Service-HASH={}\
+                \nFUTURE-Terms-of-Service-TIME={}\
+                ",
+                tos.get_version(),
+                tos.get_hash(),
+                tos.get_time()
+            ));
+        }
+        if let Some(pp) = &self.future_privacy {
+            file_out.push_str(&format!(
+                "\
+                \nFUTURE-Privacy-Policy-VERSION={}\
+                \nFUTURE-Privacy-Policy-HASH={}\
+                \nFUTURE-Privacy-Policy-TIME={}\
+                ",
+                pp.get_version(),
+                pp.get_hash(),
+                pp.get_time()
+            ));
+        }
+
         file_out
     }
 
@@ -217,6 +265,18 @@ impl ConsentState {
         let mut tos = false;
         let mut tos_version = String::new();
         let mut tos_hash = String::new();
+
+        let mut future_eula_version = String::new();
+        let mut future_eula_hash = String::new();
+        let mut future_eula_time = String::new();
+
+        let mut future_tos_version = String::new();
+        let mut future_tos_hash = String::new();
+        let mut future_tos_time = String::new();
+
+        let mut future_pp_version = String::new();
+        let mut future_pp_hash = String::new();
+        let mut future_pp_time = String::new();
 
         let mut unix = String::new();
 
@@ -241,9 +301,30 @@ impl ConsentState {
                 pp_hash = v.to_string();
             } else if let Some(v) = line.strip_prefix("UNIX=") {
                 unix = v.to_string();
+            } else if let Some(v) = line.strip_prefix("FUTURE-EULA-VERSION=") {
+                future_eula_version = v.to_string();
+            } else if let Some(v) = line.strip_prefix("FUTURE-EULA-HASH=") {
+                future_eula_hash = v.to_string();
+            } else if let Some(v) = line.strip_prefix("FUTURE-EULA-TIME=") {
+                future_eula_time = v.to_string();
+            } else if let Some(v) = line.strip_prefix("FUTURE-Terms-of-Service-VERSION=") {
+                future_tos_version = v.to_string();
+            } else if let Some(v) = line.strip_prefix("FUTURE-Terms-of-Service-HASH=") {
+                future_tos_hash = v.to_string();
+            } else if let Some(v) = line.strip_prefix("FUTURE-Terms-of-Service-TIME=") {
+                future_tos_time = v.to_string();
+            } else if let Some(v) = line.strip_prefix("FUTURE-Privacy-Policy-VERSION=") {
+                future_pp_version = v.to_string();
+            } else if let Some(v) = line.strip_prefix("FUTURE-Privacy-Policy-HASH=") {
+                future_pp_hash = v.to_string();
+            } else if let Some(v) = line.strip_prefix("FUTURE-Privacy-Policy-TIME=") {
+                future_pp_time = v.to_string();
             }
         }
         let unix: u64 = unix.parse::<u64>().unwrap_or(0);
+        let future_eula_time = future_eula_time.parse::<u64>().unwrap_or(0);
+        let future_tos_time = future_tos_time.parse::<u64>().unwrap_or(0);
+        let future_pp_time = future_pp_time.parse::<u64>().unwrap_or(0);
         Self {
             accepted_eula: eula,
             eula: Some(Doc::new(eula_version, eula_hash, Type::EULA, unix)),
@@ -251,6 +332,36 @@ impl ConsentState {
             privacy: Some(Doc::new(pp_version, pp_hash, Type::PP, unix)),
             accepted_tos: tos,
             tos: Some(Doc::new(tos_version, tos_hash, Type::TOS, unix)),
+            future_eula: if !future_eula_version.is_empty() {
+                Some(Doc::new(
+                    future_eula_version,
+                    future_eula_hash,
+                    Type::EULA,
+                    future_eula_time,
+                ))
+            } else {
+                None
+            },
+            future_tos: if !future_tos_version.is_empty() {
+                Some(Doc::new(
+                    future_tos_version,
+                    future_tos_hash,
+                    Type::TOS,
+                    future_tos_time,
+                ))
+            } else {
+                None
+            },
+            future_privacy: if !future_pp_version.is_empty() {
+                Some(Doc::new(
+                    future_pp_version,
+                    future_pp_hash,
+                    Type::PP,
+                    future_pp_time,
+                ))
+            } else {
+                None
+            },
         }
         .sanitize()
     }

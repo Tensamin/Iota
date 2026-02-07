@@ -1,5 +1,5 @@
 use crate::terms::{
-    consent_state::{ConsentState, UserChoice},
+    consent_state::{ConsentState, UpdateDecision, UserChoice},
     doc::Doc,
     focus::Focus,
     md_viewer::FileViewer,
@@ -16,26 +16,29 @@ use std::time::Duration;
 
 pub async fn run_consent_ui(
     mut consent: ConsentState,
-    consent_eula: Result<Option<Doc>, Doc>,
-    consent_tos: Result<Option<Doc>, Doc>,
-    consent_pp: Result<Option<Doc>, Doc>,
+    consent_eula: UpdateDecision,
+    consent_tos: UpdateDecision,
+    consent_pp: UpdateDecision,
 ) -> ConsentState {
     let mut terminal = ratatui::init();
-    let (eula_needed, eula_future, future_eula) = match consent_eula {
-        Ok(Some(future)) => (true, true, Some(future)),
-        Ok(None) => (false, false, None),
-        Err(future) => (true, false, Some(future)),
+
+    let (eula_needed, eula_future, eula_for_future): (bool, bool, Option<Doc>) = match consent_eula
+    {
+        UpdateDecision::NoChange => (false, false, None),
+        UpdateDecision::Future { newest } => (true, true, Some(newest)),
+        UpdateDecision::Forced(doc) => (true, false, Some(doc)),
     };
-    let (tos_needed, tos_future, future_tos) = match consent_tos {
-        Ok(Some(future)) => (true, true, Some(future)),
-        Ok(None) => (false, false, None),
-        Err(future) => (true, false, Some(future)),
+    let (tos_needed, tos_future, tos_for_future): (bool, bool, Option<Doc>) = match consent_tos {
+        UpdateDecision::NoChange => (false, false, None),
+        UpdateDecision::Future { newest } => (true, true, Some(newest)),
+        UpdateDecision::Forced(doc) => (true, false, Some(doc)),
     };
-    let (pp_needed, pp_future, future_privacy) = match consent_pp {
-        Ok(Some(future)) => (true, true, Some(future)),
-        Ok(None) => (false, false, None),
-        Err(future) => (true, false, Some(future)),
+    let (pp_needed, pp_future, pp_for_future): (bool, bool, Option<Doc>) = match consent_pp {
+        UpdateDecision::NoChange => (false, false, None),
+        UpdateDecision::Future { newest } => (true, true, Some(newest)),
+        UpdateDecision::Forced(doc) => (true, false, Some(doc)),
     };
+    let update_needed = eula_needed || tos_needed || pp_needed;
     let (mut eula, mut tos, mut pp) = (!eula_needed, !tos_needed, !pp_needed);
     let mut focus = Focus::Eula;
 
@@ -247,7 +250,15 @@ pub async fn run_consent_ui(
                     .block(Block::default().title(format!(" Update Tensamin User Consent [Q to Quit] {}, {}, {}", pp_needed, eula_needed, tos_needed)).borders(Borders::ALL));
                 f.render_widget(consent_block, chunks[0]);
 
-                draw_buttons(f, chunks[1], focus, (eula, tos, pp));
+                let downgrade_scenario = tos_needed || pp_needed;
+                draw_buttons(
+                    f,
+                    chunks[1],
+                    focus,
+                    (eula, tos && pp),
+                    update_needed,
+                    downgrade_scenario,
+                );
             })
             .unwrap();
 
@@ -260,10 +271,17 @@ pub async fn run_consent_ui(
                         continue;
                     }
                 }
+                let mut possible_states = vec![Focus::Eula, Focus::Tos, Focus::Pp, Focus::Cancel];
+                if eula {
+                    possible_states.push(Focus::Continue);
+                    if tos && pp {
+                        possible_states.push(Focus::ContinueAll);
+                    }
+                }
                 match key.code {
                     KeyCode::Esc => break UserChoice::Deny,
-                    KeyCode::Up | KeyCode::Left => focus.prev((eula, tos, pp)),
-                    KeyCode::Down | KeyCode::Right | KeyCode::Tab => focus.next((eula, tos, pp)),
+                    KeyCode::Up | KeyCode::Left => focus.prev(&possible_states),
+                    KeyCode::Down | KeyCode::Right | KeyCode::Tab => focus.next(&possible_states),
                     KeyCode::Char('q') | KeyCode::Char('Q') => break UserChoice::Deny,
                     KeyCode::Char('o') | KeyCode::Char('O') => {
                         let terms_type = match focus {
@@ -298,8 +316,8 @@ pub async fn run_consent_ui(
                     KeyCode::Char(' ') => match focus {
                         Focus::Eula => {
                             eula = !eula;
-                            tos = false;
-                            pp = false;
+                            tos = !tos_needed;
+                            pp = !pp_needed;
                         }
                         Focus::Tos => {
                             if eula {
@@ -333,16 +351,16 @@ pub async fn run_consent_ui(
             consent.accepted_eula = true;
             consent.accepted_tos = true;
             consent.accepted_pp = true;
-            consent.eula = future_eula;
-            consent.tos = future_tos;
-            consent.privacy = future_privacy;
+            consent.future_eula = eula_for_future;
+            consent.future_tos = tos_for_future;
+            consent.future_privacy = pp_for_future;
         }
         UserChoice::AcceptEULA => {
             consent.accepted_eula = true;
-            consent.eula = future_eula;
+            consent.future_eula = eula_for_future;
         }
         UserChoice::Deny => {}
-    };
+    }
 
     consent
 }
@@ -386,11 +404,23 @@ fn draw_buttons(
     f: &mut ratatui::Frame,
     area: Rect,
     current_focus: Focus,
-    state: (bool, bool, bool),
+    state: (bool, bool),
+    update_needed: bool,
+    downgrade_scenario: bool,
 ) {
+    let cancel_text = if update_needed {
+        "[Q] Quit"
+    } else {
+        "[Q] Not now"
+    };
+    let continue_text = if downgrade_scenario {
+        "Downgrade"
+    } else {
+        "Continue"
+    };
     let buttons = vec![
-        ("[Q] Cancel", Focus::Cancel),
-        ("Continue", Focus::Continue),
+        (cancel_text, Focus::Cancel),
+        (continue_text, Focus::Continue),
         ("Continue with Tensamin Services", Focus::ContinueAll),
     ];
 
@@ -434,19 +464,19 @@ fn draw_buttons(
                         .bg(Color::Green)
                         .add_modifier(Modifier::BOLD)
                 } else if state.0 {
-                    Style::default().fg(Color::Green) // enabled but not focused
+                    Style::default().fg(Color::Green)
                 } else {
                     Style::default().fg(Color::DarkGray)
                 }
             }
 
             Focus::ContinueAll => {
-                if is_focused && state.0 && state.1 && state.2 {
+                if is_focused && state.1 {
                     Style::default()
                         .fg(Color::Black)
                         .bg(Color::Green)
                         .add_modifier(Modifier::BOLD)
-                } else if state.0 && state.1 && state.2 {
+                } else if state.1 {
                     Style::default().fg(Color::Green)
                 } else {
                     Style::default().fg(Color::DarkGray)

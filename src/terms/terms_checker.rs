@@ -207,10 +207,17 @@ pub async fn run_consent_ui(mut consent: ConsentState) -> ConsentState {
                         continue;
                     }
                 }
+                let mut possible_states = vec![Focus::Eula, Focus::Tos, Focus::Pp, Focus::Cancel];
+                if eula {
+                    possible_states.push(Focus::Continue);
+                    if tos && pp {
+                        possible_states.push(Focus::ContinueAll);
+                    }
+                }
                 match key.code {
                     KeyCode::Esc => break UserChoice::Deny,
-                    KeyCode::Up | KeyCode::Left => focus.prev((eula, tos, pp)),
-                    KeyCode::Down | KeyCode::Right | KeyCode::Tab => focus.next((eula, tos, pp)),
+                    KeyCode::Up | KeyCode::Left => focus.prev(&possible_states),
+                    KeyCode::Down | KeyCode::Right | KeyCode::Tab => focus.next(&possible_states),
                     KeyCode::Char('q') | KeyCode::Char('Q') => break UserChoice::Deny,
                     KeyCode::Char('o') | KeyCode::Char('O') => {
                         let terms_type = match focus {
