@@ -54,52 +54,70 @@ pub async fn render_tui() {
     let mut terminal = TERMINAL.lock().await;
     let _ = terminal.draw(|f| {
         let area = f.area();
-        let chunks = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Percentage(40),
-                Constraint::Percentage(60),
-                Constraint::Min(40),
-            ])
-            .split(area);
+
+        let is_horizontal = area.width >= 120;
+        let chunks = if is_horizontal {
+            Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Percentage(40),
+                    Constraint::Percentage(60),
+                    Constraint::Min(40),
+                ])
+                .split(area)
+        } else {
+            Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
+                .split(area)
+        };
 
         let state = APP_STATE.lock().unwrap().clone();
 
         // LOGS PANEL
         {
+            let borders = if is_horizontal {
+                Borders::LEFT.union(Borders::TOP).union(Borders::BOTTOM)
+            } else {
+                Borders::LEFT.union(Borders::RIGHT).union(Borders::TOP)
+            };
             let items: Vec<ListItem> = state
                 .logs
                 .iter()
                 .rev()
                 .map(|s| ListItem::new(s.clone()))
                 .collect();
-            let list = List::new(items).block(
-                Block::default()
-                    .title("Logs")
-                    .borders(Borders::LEFT.union(Borders::TOP).union(Borders::BOTTOM)),
-            );
+            let list = List::new(items).block(Block::default().title("Logs").borders(borders));
             f.render_widget(list, chunks[0]);
         }
         // SETTINGS PANEL
         {
+            let borders = if is_horizontal {
+                Borders::LEFT.union(Borders::TOP).union(Borders::BOTTOM)
+            } else {
+                Borders::ALL
+            };
             settings_panel::draw(
                 f,
                 chunks[1],
-                Block::default()
-                    .title("Settings")
-                    .borders(Borders::LEFT.union(Borders::TOP).union(Borders::BOTTOM)),
+                Block::default().title("Settings").borders(borders),
                 password,
                 state.clone(),
             );
-            draw_block_joins(
-                f,
-                chunks[1],
-                Borders::TOP.union(Borders::LEFT).union(Borders::BOTTOM),
-                Borders::LEFT,
-            );
+            if is_horizontal {
+                draw_block_joins(
+                    f,
+                    chunks[1],
+                    Borders::TOP.union(Borders::LEFT).union(Borders::BOTTOM),
+                    Borders::LEFT,
+                );
+            } else {
+                draw_block_joins(f, chunks[1], Borders::ALL, Borders::TOP);
+            }
         }
+
         // PERFORMANCE GRAPHS
-        {
+        if is_horizontal {
             let stack = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
