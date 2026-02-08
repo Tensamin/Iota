@@ -1,8 +1,7 @@
-use crate::auth::local_auth;
 use crate::gui::log_panel::{log_cv, log_message_format};
 use crate::users::contact::Contact;
 use crate::users::user_community_util::UserCommunityUtil;
-use crate::util::chat_files::MessageState;
+use crate::util::chat_files::{MessageState, change_message_state};
 use crate::util::chats_util::{get_user, mod_user};
 use crate::util::crypto_util::{DataFormat, SecurePayload};
 use crate::util::file_util::{get_children, load_file, save_file};
@@ -34,17 +33,8 @@ use uuid::Uuid;
 pub static OMIKRON_CONNECTION: LazyLock<Arc<RwLock<Option<Arc<OmikronConnection>>>>> =
     LazyLock::new(|| Arc::new(RwLock::new(None)));
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ConnectionVariant {
-    Omikron,
-    ClientUnauthenticated,
-    ClientAuthenticated,
-}
-
 #[derive(Clone)]
 pub struct OmikronConnection {
-    pub variant: Arc<RwLock<ConnectionVariant>>,
-    pub user_id: Arc<RwLock<i64>>,
     pub(crate) writer:
         Arc<Mutex<Option<Box<dyn Sink<Message, Error = tungstenite::Error> + Send + Unpin>>>>,
     waiting: Arc<DashMap<Uuid, Box<dyn Fn(CommunicationValue) + Send + Sync>>>,
@@ -56,8 +46,6 @@ pub struct OmikronConnection {
 impl OmikronConnection {
     pub fn new() -> Self {
         Self {
-            variant: Arc::new(RwLock::new(ConnectionVariant::Omikron)),
-            user_id: Arc::new(RwLock::new(0)),
             writer: Arc::new(Mutex::new(None)),
             waiting: Arc::new(DashMap::new()),
             last_ping: Arc::new(Mutex::new(-1)),
@@ -70,8 +58,6 @@ impl OmikronConnection {
         reader: SplitStream<tokio_tungstenite::WebSocketStream<TokioIo<Upgraded>>>,
     ) -> Arc<Self> {
         let connection = Arc::new(Self {
-            variant: Arc::new(RwLock::new(ConnectionVariant::ClientUnauthenticated)),
-            user_id: Arc::new(RwLock::new(0)),
             writer: Arc::new(Mutex::new(Some(Box::new(writer)
                 as Box<dyn Sink<Message, Error = tungstenite::Error> + Send + Unpin>))),
             waiting: Arc::new(DashMap::new()),
@@ -207,13 +193,6 @@ impl OmikronConnection {
         .await;
     }
 
-    pub async fn set_variant(self: &Arc<Self>, variant: ConnectionVariant) {
-        *self.variant.write().await = variant;
-    }
-    pub async fn set_user_id(self: &Arc<Self>, user_id: i64) {
-        *self.user_id.write().await = user_id;
-    }
-
     async fn spawn_listener(
         self: &Arc<Self>,
         mut read_half: Box<dyn Stream<Item = Result<Message, tungstenite::Error>> + Send + Unpin>,
@@ -222,7 +201,6 @@ impl OmikronConnection {
         let writer_out = self.writer.clone();
         let is_connected_out = self.is_connected.clone();
         let sel_out = self.clone();
-        let variant = self.variant.clone();
 
         {
             ACTIVE_TASKS.lock().unwrap().push("Listener".to_string());
@@ -237,7 +215,6 @@ impl OmikronConnection {
                     waiting_out.clone(),
                     writer_out.clone(),
                     is_connected_out.clone(),
-                    variant.clone(),
                 );
             }
             *is_connected_out.lock().await = false;
@@ -260,7 +237,6 @@ impl OmikronConnection {
             >,
         >,
         is_connected: Arc<Mutex<bool>>,
-        variant: Arc<RwLock<ConnectionVariant>>,
     ) {
         tokio::spawn(async move {
             match msg {
@@ -358,70 +334,6 @@ impl OmikronConnection {
                         return;
                     }
 
-                    let com = variant.read().await.clone();
-                    if com == ConnectionVariant::ClientUnauthenticated {
-                        if cv.is_type(CommunicationType::identification) {
-                            // Extract user ID
-                            let user_id: i64 = cv
-                                .get_data(DataTypes::user_id)
-                                .unwrap_or(&JsonValue::Null)
-                                .as_i64()
-                                .unwrap_or(0);
-                            if user_id == 0 {
-                                self.send_message(
-                                    &CommunicationValue::new(
-                                        CommunicationType::error_invalid_user_id,
-                                    )
-                                    .with_id(cv.get_id()),
-                                )
-                                .await;
-                                return;
-                            }
-
-                            // Validate private key
-                            if let Some(private_key_hash) = cv.get_data(DataTypes::private_key_hash)
-                            {
-                                log_message(format!("private_key_hash: {}", private_key_hash));
-                                let is_valid = local_auth::is_private_key_valid(
-                                    &user_id,
-                                    &private_key_hash.to_string(),
-                                );
-
-                                if !is_valid {
-                                    log_message("Invalid private key");
-                                    self.send_message(
-                                        &CommunicationValue::new(
-                                            CommunicationType::error_invalid_private_key,
-                                        )
-                                        .with_id(cv.get_id()),
-                                    )
-                                    .await;
-                                    return;
-                                }
-                            } else {
-                                log_message("Missing private key");
-                                self.send_message(
-                                    &CommunicationValue::new(
-                                        CommunicationType::error_invalid_private_key,
-                                    )
-                                    .with_id(cv.get_id()),
-                                )
-                                .await;
-                                return;
-                            }
-
-                            // Set identification data
-
-                            self.set_user_id(user_id).await;
-                            self.set_variant(ConnectionVariant::ClientAuthenticated)
-                                .await;
-
-                            let response =
-                                CommunicationValue::new(CommunicationType::identification_response)
-                                    .with_id(cv.get_id());
-                            self.send_message(&response).await;
-                        }
-                    }
                     // ************************************************ //
                     // Direct messages                                  //
                     // ************************************************ //
@@ -452,17 +364,18 @@ impl OmikronConnection {
                     if cv.is_type(CommunicationType::message_other_iota) {
                         let sender_id = &cv.get_sender();
                         let receiver_id = &cv.get_receiver();
-
+                        let timestamp = cv
+                            .get_data(DataTypes::send_time)
+                            .unwrap_or(&JsonValue::new_object())
+                            .as_i64()
+                            .unwrap_or(
+                                SystemTime::now()
+                                    .duration_since(UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_millis() as i64,
+                            );
                         chat_files::add_message(
-                            cv.get_data(DataTypes::send_time)
-                                .unwrap_or(&JsonValue::new_object())
-                                .as_i64()
-                                .unwrap_or(
-                                    SystemTime::now()
-                                        .duration_since(UNIX_EPOCH)
-                                        .unwrap()
-                                        .as_millis() as i64,
-                                ) as u128,
+                            timestamp as u128,
                             false,
                             *receiver_id,
                             *sender_id,
@@ -489,14 +402,20 @@ impl OmikronConnection {
                             .await;
 
                         if let Ok(user_resp) = user_resp {
-                            let ms: MessageState = MessageState::from_str(
+                            let ms = MessageState::from_str(
                                 user_resp
                                     .get_data(DataTypes::message_state)
                                     .unwrap_or(&JsonValue::Null)
                                     .as_str()
                                     .unwrap_or(""),
                             )
-                            .upgrade(MessageState::Send);
+                            .upgrade(MessageState::Received);
+                            let _ = change_message_state(
+                                timestamp,
+                                *receiver_id,
+                                *sender_id,
+                                ms.clone(),
+                            );
                             self.send_message(
                                 &CommunicationValue::new(CommunicationType::message_state)
                                     .with_id(cv.get_id())
@@ -524,7 +443,7 @@ impl OmikronConnection {
                                     )
                                     .add_data(
                                         DataTypes::message_state,
-                                        JsonValue::from(MessageState::Send.as_str()),
+                                        JsonValue::from(MessageState::Sent.as_str()),
                                     ),
                             )
                             .await;

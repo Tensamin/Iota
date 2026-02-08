@@ -9,24 +9,24 @@ use crate::gui::log_panel::log_message;
 pub enum MessageState {
     Read,
     Received,
-    Send,
+    Sent,
     Sending,
 }
 
 impl MessageState {
     pub fn as_str(&self) -> &'static str {
         match self {
-            MessageState::Read => "READ",
-            MessageState::Received => "RECEIVED",
-            MessageState::Send => "SEND",
-            MessageState::Sending => "SENDING",
+            MessageState::Read => "read",
+            MessageState::Received => "received",
+            MessageState::Sent => "sent",
+            MessageState::Sending => "sending",
         }
     }
     pub fn from_str(str: &str) -> Self {
         match str.to_uppercase().as_str() {
-            "READ" => MessageState::Read,
-            "RECEIVED" => MessageState::Received,
-            "SEND" => MessageState::Send,
+            "read" => MessageState::Read,
+            "received" => MessageState::Received,
+            "sent" => MessageState::Sent,
             _ => MessageState::Sending,
         }
     }
@@ -35,8 +35,8 @@ impl MessageState {
             Self::Read
         } else if other == Self::Received || self == Self::Received {
             Self::Received
-        } else if other == Self::Send || self == Self::Send {
-            Self::Send
+        } else if other == Self::Sent || self == Self::Sent {
+            Self::Sent
         } else {
             Self::Sending
         }
