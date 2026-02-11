@@ -31,6 +31,7 @@ use crate::server::server::start;
 use crate::terms::consent_state;
 use crate::users::user_manager;
 use crate::util::config_util::CONFIG;
+use crate::util::file_util::download_and_extract_zip;
 use crate::util::file_util::has_dir;
 
 pub static APP_STATE: LazyLock<Arc<Mutex<AppState>>> =
@@ -135,11 +136,11 @@ async fn main() {
             }
         }
         if !has_dir("web") {
-            /*download_and_extract_zip(
-                "weblink",
+            download_and_extract_zip(
+                "https://omega.tensamin.net/api/download/iota_frontend",
                 "web",
             )
-            .await;*/
+            .await;
         }
         loop {
             if *SHUTDOWN.read().await {

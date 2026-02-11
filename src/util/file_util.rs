@@ -1,6 +1,6 @@
 use std::ffi::OsStr;
 use std::fs::{self, File};
-use std::io::{self, BufReader, Read};
+use std::io::{self, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use sysinfo::System;
 use uuid::Uuid;
@@ -249,19 +249,22 @@ pub fn get_used_ram() -> String {
     format!("{}/{}", design_byte(used), design_byte(total))
 }
 
-// Helper to download the zip file content to a file on disk
-#[allow(dead_code)]
-async fn download_zip(url: &str, as_name: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let response = reqwest::get(url).await?;
+use reqwest::Client;
 
-    // Check for successful response status
+pub async fn download_zip(url: &str, zip_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let client = Client::new();
+
+    let response = client.get(url).send().await?;
+
     if !response.status().is_success() {
-        return Err(format!("Failed to download file: Status {}", response.status()).into());
+        return Err(format!("Download failed: {}", response.status()).into());
     }
 
-    let mut zip_file = File::create(as_name)?;
-    let body = response.bytes().await?;
-    io::copy(&mut &*body, &mut zip_file)?;
+    let bytes = response.bytes().await?;
+
+    let mut file = File::create(zip_path)?;
+    file.write_all(&bytes)?;
+    file.flush()?;
 
     Ok(())
 }
@@ -343,30 +346,30 @@ fn extract_zip_contents_to_folder(
     Ok(())
 }
 
-#[allow(dead_code)]
 pub async fn download_and_extract_zip(url: &str, as_name: &str) {
     let base_dir = PathBuf::from(get_directory());
-    let zip_filename = format!("{}.zip", Uuid::new_v4()); // Use a unique name for the downloaded ZIP file
-    let zip_path = base_dir.join(&zip_filename);
+    let zip_path = base_dir.join(format!("{}.zip", Uuid::new_v4()));
     let target_dir = base_dir.join(as_name);
 
-    // Step 1: Download the ZIP file
+    log_message(format!("Downloading {}...", url));
+
     if let Err(e) = download_zip(url, &zip_path).await {
-        log_message(format!("Error downloading file: {}", e));
+        log_message(format!("Download failed: {}", e));
         return;
     }
 
-    // Step 2: Extract and flatten the ZIP file contents into the target directory
+    log_message("Download complete. Extracting...");
+
     if let Err(e) = extract_zip_contents_to_folder(&zip_path, &target_dir) {
-        log_message(format!("Error extracting ZIP file contents: {}", e));
+        log_message(format!("Extraction failed: {}", e));
+        let _ = fs::remove_file(&zip_path);
+        return;
     }
 
-    // Step 3: Clean up the downloaded ZIP file
-    if let Err(e) = fs::remove_file(&zip_path) {
-        log_message(format!(
-            "Error cleaning up ZIP file {}: {}",
-            zip_path.display(),
-            e
-        ));
-    }
+    let _ = fs::remove_file(&zip_path);
+
+    log_message(format!(
+        "Successfully extracted to {}",
+        target_dir.display()
+    ));
 }
