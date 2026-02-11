@@ -1,8 +1,9 @@
 use std::ffi::OsStr;
 use std::fs::{self, File};
-use std::io::{self, BufReader, Read, Write};
+use std::io::{self, BufReader, Read};
 use std::path::{Path, PathBuf};
 use sysinfo::System;
+use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
 use walkdir::WalkDir;
 use zip::ZipArchive;
@@ -33,7 +34,7 @@ fn delete_dir_recursive(directory: &Path) -> bool {
         log_message(format!(
             "[IMPORTANT] Couldn't delete directory {}: {}",
             directory.display(),
-            e
+            e,
         ));
         return false;
     }
@@ -124,31 +125,13 @@ pub fn load_file(path: &str, name: &str) -> String {
     content
 }
 
-pub fn load_file_vec(path: &str, name: &str) -> Vec<u8> {
+pub fn load_file_vec(path: &str, name: &str) -> Result<Vec<u8>, std::io::Error> {
     let dir = Path::new(&get_directory()).join(path);
     let file_path = dir.join(name);
 
-    if !dir.exists() {
-        if let Err(e) = fs::create_dir_all(&dir) {
-            log_message(format!("[IMPORTANT] Couldn't create directories: {}", e));
-            return Vec::new();
-        }
-        return Vec::new();
-    }
-
-    if !file_path.exists() {
-        if let Err(e) = File::create(&file_path) {
-            log_message(format!("[IMPORTANT] Couldn't create file: {}", e));
-        }
-        return Vec::new();
-    }
-
-    let mut content = Vec::new();
-    if let Ok(mut f) = File::open(&file_path) {
-        let _ = f.read_to_end(&mut content);
-    }
-    content
+    std::fs::read(file_path)
 }
+
 pub fn save_file(path: &str, name: &str, value: &str) {
     let dir = Path::new(&get_directory()).join(path);
     let file_path = dir.join(name);
@@ -190,6 +173,7 @@ pub fn get_directory() -> String {
         .to_string()
 }
 
+// Helper to download the zip file content to a file on disk
 #[allow(dead_code)]
 pub fn used_space() -> u64 {
     get_directory_size(&PathBuf::from(get_directory()))
@@ -257,14 +241,12 @@ pub async fn download_zip(url: &str, zip_path: &Path) -> Result<(), Box<dyn std:
     let response = client.get(url).send().await?;
 
     if !response.status().is_success() {
-        return Err(format!("Download failed: {}", response.status()).into());
+        return Err(format!("Failed to download file: Status {}", response.status()).into());
     }
 
-    let bytes = response.bytes().await?;
-
-    let mut file = File::create(zip_path)?;
-    file.write_all(&bytes)?;
-    file.flush()?;
+    let mut zip_file = tokio::fs::File::create(zip_path).await?;
+    let body = response.bytes().await?;
+    zip_file.write_all(&body).await?;
 
     Ok(())
 }
@@ -346,30 +328,33 @@ fn extract_zip_contents_to_folder(
     Ok(())
 }
 
+#[allow(dead_code)]
 pub async fn download_and_extract_zip(url: &str, as_name: &str) {
+    log_message("Downloading ZIP file...");
     let base_dir = PathBuf::from(get_directory());
-    let zip_path = base_dir.join(format!("{}.zip", Uuid::new_v4()));
+    let zip_filename = format!("{}.zip", Uuid::new_v4());
+    let zip_path = base_dir.join(&zip_filename);
     let target_dir = base_dir.join(as_name);
 
-    log_message(format!("Downloading {}...", url));
-
     if let Err(e) = download_zip(url, &zip_path).await {
-        log_message(format!("Download failed: {}", e));
+        log_message(format!("Error downloading file: {}", e));
         return;
     }
 
-    log_message("Download complete. Extracting...");
-
-    if let Err(e) = extract_zip_contents_to_folder(&zip_path, &target_dir) {
-        log_message(format!("Extraction failed: {}", e));
-        let _ = fs::remove_file(&zip_path);
-        return;
+    let zip_path_clone = zip_path.clone();
+    let target_dir_clone = target_dir.clone();
+    let extract_result = extract_zip_contents_to_folder(&zip_path_clone, &target_dir_clone);
+    if let Err(e) = extract_result {
+        log_message(format!("Panic during ZIP extraction: {}", e));
     }
 
-    let _ = fs::remove_file(&zip_path);
-
-    log_message(format!(
-        "Successfully extracted to {}",
-        target_dir.display()
-    ));
+    if let Err(e) = tokio::fs::remove_file(&zip_path).await {
+        log_message(format!(
+            "Error cleaning up ZIP file {}: {}",
+            zip_path.display(),
+            e
+        ));
+    } else {
+        log_message("Downloaded ZIP file");
+    }
 }

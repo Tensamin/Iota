@@ -1,7 +1,7 @@
 use crate::gui::log_panel::log_message;
-use crate::server::api;
 use crate::server::socket::handle;
-use crate::util::file_util::{load_file_buf, load_file_vec};
+use crate::server::{api, web_path_parser};
+use crate::util::file_util::load_file_buf;
 use crate::{ACTIVE_TASKS, SHUTDOWN};
 
 use base64::Engine;
@@ -29,7 +29,7 @@ use std::result::Result::Ok;
 use std::sync::Arc;
 use std::{future::Future, pin::Pin, time::Duration};
 use tokio::net::TcpListener;
-use tokio::sync::broadcast; // Import broadcast for the kill switch
+use tokio::sync::broadcast;
 use tokio_rustls::TlsAcceptor;
 use tokio_tungstenite::WebSocketStream;
 use tower::Service;
@@ -141,57 +141,27 @@ impl Service<HttpRequest<Incoming>> for HttpService {
 
                 Ok(api::handle(&path, &is_acceptable, headers.clone(), body_string).await)
             } else {
-                let mut path_parts: Vec<&str> = path.split("/").collect();
-                let name = path_parts.remove(path_parts.len() - 1);
-                let name = if name.is_empty() {
-                    "index.html"
-                } else if name.contains(".") && name.contains("?") {
-                    name.split("?").next().unwrap()
-                } else if name.contains(".") {
-                    name
-                } else {
-                    &format!("{}.html", name)
-                };
-                let code = if let Some(ext) = name.split(".").last() {
-                    match ext {
-                        "html" => "text/html",
-                        "css" => "text/css",
-                        "ico" => "image/x-icon",
-                        "png" => "image/png",
-                        "js" => "application/javascript",
-                        "json" => "application/json",
-                        _ => "application/octet-stream",
+                let whole_body = match body.collect().await {
+                    Ok(collected) => collected,
+                    Err(e) => {
+                        log_message(format!("Error collecting body: {}", e));
+                        return Ok(HttpResponse::builder()
+                            .status(StatusCode::INTERNAL_SERVER_ERROR)
+                            .body(Full::new(Bytes::from(format!(
+                                "Failed to read body: {}",
+                                e
+                            ))))
+                            .unwrap());
                     }
-                } else {
-                    "application/octet-stream"
                 };
-                let (status, content, body_text): (StatusCode, &str, Vec<u8>) = {
-                    let content = load_file_vec(&format!("web{}/", path_parts.join("/")), name);
-                    if content.is_empty() {
-                        let content = load_file_vec("web", "404.html");
-                        if content.is_empty() {
-                            (
-                                StatusCode::NOT_FOUND,
-                                code,
-                                include_str!("../../static/web/404.html")
-                                    .as_bytes()
-                                    .to_vec(),
-                            )
-                        } else {
-                            (StatusCode::OK, code, content)
-                        }
-                    } else {
-                        (StatusCode::OK, code, content)
-                    }
+                let bytes = whole_body.to_bytes();
+
+                let body_string: Option<String> = match String::from_utf8(bytes.to_vec()) {
+                    Ok(s) => Some(s),
+                    Err(_) => None,
                 };
 
-                let body = Full::new(Bytes::from(body_text.to_vec()));
-                let response = HttpResponse::builder()
-                    .header("Content-Type", content)
-                    .status(status)
-                    .body(body)
-                    .unwrap();
-                Ok(response)
+                Ok(web_path_parser::handle(&path, headers, body_string).await)
             }
         };
 
