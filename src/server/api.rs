@@ -1,255 +1,187 @@
+use crate::server::server::is_local_network;
+use axum::routing::{get, post};
+use axum::{
+    extract::{ConnectInfo, Json, Path, State},
+    http::{HeaderMap, StatusCode},
+    response::{IntoResponse, Response},
+};
+use json::JsonValue;
+use serde_json::{Value, json};
+use std::net::SocketAddr;
 use std::sync::Arc;
 
-use crate::communities::community::Community;
-use crate::data::communication::{CommunicationType, CommunicationValue, DataTypes};
-use crate::gui::log_panel::log_message;
-use crate::util::file_util::delete_file;
-use crate::{RELOAD, SHUTDOWN};
-use axum::http::HeaderValue;
-use http_body_util::Full;
-use hyper::body::Bytes;
-use hyper::{HeaderMap, Response as HttpResponse, StatusCode};
-use json::JsonValue;
-
-use crate::util::config_util::CONFIG;
-use crate::{APP_STATE, communities::community_manager, users::user_manager};
-
-pub async fn handle(
-    path: &str,
-    is_local: &bool,
-    headers: HeaderMap<HeaderValue>,
-    body_string: Option<String>,
-) -> HttpResponse<Full<Bytes>> {
-    if !is_local {
-        return HttpResponse::builder()
-            .status(StatusCode::FORBIDDEN)
-            .body(Full::new(Bytes::from("403 Forbidden".to_string())))
-            .unwrap();
+pub fn api_router() -> axum::Router<bool> {
+    axum::Router::new()
+        .route("/shutdown", post(shutdown))
+        .route("/reload", post(reload))
+        .route("/users/add", post(users_add))
+        .route("/users/remove", post(users_remove))
+        .route("/users/get", get(users_get))
+        .route("/communities/add", post(communities_add))
+        .route("/communities/get", get(communities_get))
+        .route("/settings/set", post(settings_set))
+        .route("/settings/get", get(settings_get))
+}
+pub async fn settings_set(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(ssl): State<bool>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    if !is_allowed(addr, ssl) {
+        return forbidden();
     }
 
-    let path_parts: Vec<&str> = path.split("/").collect();
-    let body: Option<JsonValue> = if body_string.is_some() {
-        if let Ok(body_json) = json::parse(&body_string.unwrap()) {
-            Some(body_json)
-        } else {
-            None
+    let key = headers.get("key").and_then(|v| v.to_str().ok());
+    let value = headers.get("value").and_then(|v| v.to_str().ok());
+
+    match (key, value) {
+        (Some(k), Some(v)) => {
+            crate::util::config_util::CONFIG
+                .write()
+                .await
+                .config
+                .insert(k, v);
+
+            success()
         }
-    } else {
-        None
+        _ => error(),
+    }
+}
+
+pub async fn settings_get(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(ssl): State<bool>,
+) -> impl IntoResponse {
+    if !is_allowed(addr, ssl) {
+        return forbidden();
+    }
+
+    (StatusCode::OK, Json(CONFIG.read().await.config.clone())).into_response()
+}
+pub async fn communities_get(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(ssl): State<bool>,
+) -> impl IntoResponse {
+    if !is_allowed(addr, ssl) {
+        return forbidden();
+    }
+
+    let communities = crate::communities::community_manager::get_communities().await;
+
+    let mut list = JsonValue::new_array();
+
+    for c in communities {
+        list.push(c.frontend().await);
+    }
+
+    (StatusCode::OK, Json(list)).into_response()
+}
+pub async fn communities_add(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(ssl): State<bool>,
+    Json(payload): Json<Value>,
+) -> impl IntoResponse {
+    if !is_allowed(addr, ssl) {
+        return forbidden();
+    }
+
+    let name = payload["name"].as_str().unwrap_or("").to_string();
+    let owner = payload["owner"].as_i64().unwrap_or(0);
+
+    let community = Arc::new(crate::communities::community::Community::create(name, owner).await);
+
+    crate::communities::community_manager::add_community(community).await;
+
+    success()
+}
+pub async fn users_get(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(ssl): State<bool>,
+) -> impl IntoResponse {
+    if !is_allowed(addr, ssl) {
+        return forbidden();
+    }
+
+    let users = crate::users::user_manager::get_users();
+
+    let list: Vec<_> = users.into_iter().map(|u| u.frontend()).collect();
+
+    Json(list)
+}
+pub async fn users_remove(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(ssl): State<bool>,
+    Json(payload): Json<Value>,
+) -> impl IntoResponse {
+    if !is_allowed(addr, ssl) {
+        return forbidden();
+    }
+
+    let uuid = payload.get("uuid").and_then(|v| v.as_i64()).unwrap_or(0);
+
+    crate::users::user_manager::remove_user(uuid);
+    crate::users::user_manager::save_users();
+
+    success()
+}
+pub async fn users_add(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(ssl): State<bool>,
+    Json(payload): Json<Value>,
+) -> impl IntoResponse {
+    if !is_allowed(addr, ssl) {
+        return forbidden();
+    }
+
+    let username = match payload.get("username").and_then(|v| v.as_str()) {
+        Some(u) => u,
+        None => return error().into_response(),
     };
-    let (status, content, body_text) = if path_parts.len() >= 3 {
-        match path_parts[2] {
-            "shutdown" => {
-                *SHUTDOWN.write().await = true;
-                (
-                    StatusCode::OK,
-                    "application/json",
-                    "{\"type\":\"success\"}".to_string(),
-                )
-            }
-            "reload" => {
-                *SHUTDOWN.write().await = true;
-                *RELOAD.write().await = true;
-                (
-                    StatusCode::OK,
-                    "application/json",
-                    "{\"type\":\"success\"}".to_string(),
-                )
-            }
-            "app_state" => (StatusCode::OK, "application/json", {
-                let with = headers
-                    .get("size")
-                    .unwrap_or(&HeaderValue::from_static("50"))
-                    .to_str()
-                    .unwrap()
-                    .to_string();
-                let json = APP_STATE
-                    .lock()
-                    .unwrap()
-                    .with_width(with.parse::<u16>().unwrap_or(50));
-                json.to_json().to_string()
-            }),
-            "users" => (StatusCode::OK, "application/json", {
-                if path_parts.len() >= 4 {
-                    match path_parts[3] {
-                        "add" => {
-                            if body.is_none() {
-                                "{\"type\":\"error\"}".to_string()
-                            } else {
-                                let username =
-                                    body.unwrap()["username"].as_str().unwrap().to_string();
-                                if let (Some(user), Some(_private_key)) =
-                                    user_manager::create_user(&username).await
-                                {
-                                    let cv =
-                                        CommunicationValue::new(CommunicationType::create_user)
-                                            .add_data(DataTypes::user, user.frontend());
-                                    cv.to_json().to_string()
-                                } else {
-                                    "{\"type\":\"error\"}".to_string()
-                                }
-                            }
-                        }
-                        "remove_tu" => {
-                            if body.is_none() {
-                                "{\"type\":\"error\"}".to_string()
-                            } else {
-                                let username =
-                                    body.unwrap()["username"].as_str().unwrap().to_string();
 
-                                delete_file("", &format!("{}.tu", username));
-
-                                "{\"type\":\"success\"}".to_string()
-                            }
-                        }
-                        "remove" => {
-                            if body.is_none() {
-                                "{\"type\":\"error\"}".to_string()
-                            } else {
-                                let uuid = body.unwrap()["uuid"].as_i64().unwrap_or(0);
-                                // TODO MOVE TO OMIKRON CONNECTION
-                                /*unregister_user(
-                                    uuid,
-                                    &user_manager::get_user(uuid).unwrap().reset_token,
-                                )
-                                .await;*/
-                                user_manager::remove_user(uuid);
-                                user_manager::save_users();
-                                "{}".to_string()
-                            }
-                        }
-                        "get" => {
-                            let users = user_manager::get_users();
-                            let mut json = JsonValue::new_array();
-                            for user in users {
-                                let _ = json.push(user.frontend());
-                            }
-                            json.to_string()
-                        }
-                        _ => "{\"type\":\"error\"}".to_string(),
-                    }
-                } else {
-                    let users = user_manager::get_users();
-                    let mut json = JsonValue::new_array();
-                    for user in users {
-                        let _ = json.push(user.to_json());
-                    }
-                    json.to_string()
-                }
-            }),
-            "communities" => (StatusCode::OK, "application/json", {
-                if path_parts.len() >= 4 {
-                    match path_parts[3] {
-                        "add" => {
-                            if let Some(body) = body {
-                                let name = body["name"].as_str().unwrap().to_string();
-                                let user_id = body["owner"].as_i64().unwrap_or(0);
-                                let community = Arc::new(Community::create(name, user_id).await);
-                                community_manager::add_community(community).await;
-                                "{\"type\":\"success\"}".to_string()
-                            } else {
-                                "{\"type\":\"error\"}".to_string()
-                            }
-                        }
-                        "remove" => {
-                            if let Some(body) = body {
-                                let name = body["name"].as_str().unwrap().to_string();
-                                community_manager::remove_community(&name).await;
-                                "{\"type\":\"success\"}".to_string()
-                            } else {
-                                "{\"type\":\"error\"}".to_string()
-                            }
-                        }
-                        "change" => {
-                            if path_parts.len() >= 5 {
-                                match path_parts[4] {
-                                    "owner" => {
-                                        if let Some(body) = body {
-                                            let name = body["name"].as_str().unwrap().to_string();
-                                            let owner = body["owner"].as_i64().unwrap_or(0);
-                                            community_manager::get_community(&name)
-                                                .await
-                                                .unwrap()
-                                                .set_owner(owner)
-                                                .await;
-                                            "{\"type\":\"success\"}".to_string()
-                                        } else {
-                                            "{\"type\":\"error\"}".to_string()
-                                        }
-                                    }
-                                    _ => "{\"type\":\"error\"}".to_string(),
-                                }
-                            } else {
-                                "{\"type\":\"error\"}".to_string()
-                            }
-                        }
-                        "get" => {
-                            let communities = community_manager::get_communities().await;
-                            let mut json = JsonValue::new_array();
-                            for community in communities {
-                                let _ = json.push(community.frontend().await);
-                            }
-                            json.to_string()
-                        }
-                        _ => "{\"type\":\"error\"}".to_string(),
-                    }
-                } else {
-                    let communities = community_manager::get_communities().await;
-                    let mut json = JsonValue::new_array();
-                    for community in communities {
-                        let _ = json.push(community.to_json().await);
-                    }
-                    json.to_string()
-                }
-            }),
-            "settings" => (StatusCode::OK, "application/json", {
-                if path_parts.len() >= 4 {
-                    match path_parts[3] {
-                        "set" => {
-                            if let Some(key) = headers.get("key") {
-                                if let Some(value) = headers.get("value") {
-                                    let _ = CONFIG
-                                        .write()
-                                        .await
-                                        .config
-                                        .insert(key.to_str().unwrap(), value.to_str().unwrap());
-                                    "{\"type\":\"success\"}".to_string()
-                                } else {
-                                    "{\"type\":\"error\"}".to_string()
-                                }
-                            } else {
-                                "{\"type\":\"error\"}".to_string()
-                            }
-                        }
-                        "get" => CONFIG.read().await.config.to_string(),
-                        _ => "{\"type\":\"error\"}".to_string(),
-                    }
-                } else {
-                    CONFIG.read().await.config.to_string()
-                }
-            }),
-
-            _ => {
-                log_message(format!("Unknown API endpoint: {}", path));
-                (
-                    StatusCode::NOT_FOUND,
-                    "application/json",
-                    "404 Not Found".to_string(),
-                )
-            }
-        }
+    if let (Some(user), Some(_)) = crate::users::user_manager::create_user(username).await {
+        (StatusCode::OK, Json(user.frontend())).into_response()
     } else {
-        log_message(format!("Invalid API path: {}", path));
-        (
-            StatusCode::NOT_FOUND,
-            "application/json",
-            "404 Not Found".to_string(),
-        )
-    };
-    let body = Full::new(Bytes::from(body_text.to_string()));
-    HttpResponse::builder()
-        .header("Content-Type", content)
-        .status(status)
-        .body(body)
-        .unwrap()
+        error()
+    }
+}
+pub async fn shutdown(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(ssl): State<bool>,
+) -> impl IntoResponse {
+    if !is_allowed(addr, ssl) {
+        return forbidden();
+    }
+
+    *crate::SHUTDOWN.write().await = true;
+    success()
+}
+
+pub async fn reload(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(ssl): State<bool>,
+) -> impl IntoResponse {
+    if !is_allowed(addr, ssl) {
+        return forbidden();
+    }
+
+    *crate::SHUTDOWN.write().await = true;
+    *crate::RELOAD.write().await = true;
+
+    success()
+}
+
+fn forbidden() -> Response {
+    (StatusCode::FORBIDDEN, "403 Forbidden").into_response()
+}
+
+fn success() -> Response {
+    Json(json!({ "type": "success" })).into_response()
+}
+
+fn error() -> Response {
+    Json(json!({ "type": "error" })).into_response()
+}
+
+fn is_allowed(addr: SocketAddr, ssl: bool) -> bool {
+    is_local_network(addr.ip()) || ssl
 }

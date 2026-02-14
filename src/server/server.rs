@@ -1,492 +1,164 @@
 use crate::gui::log_panel::log_message;
-use crate::server::api;
+use crate::server::api::{self, api_router};
 use crate::server::socket::handle;
 use crate::util::file_util::{load_file_buf, load_file_vec};
 use crate::{ACTIVE_TASKS, SHUTDOWN};
 
-use base64::Engine;
-use base64::engine::general_purpose::STANDARD;
-use bytes::Bytes;
-use futures::StreamExt;
-use futures_util::TryFutureExt;
-use http_body_util::BodyExt;
-use http_body_util::Full;
-use hyper::{Method, StatusCode};
-use hyper::{
-    Request as HttpRequest, Response as HttpResponse, body::Incoming, server::conn::http1, upgrade,
+use axum::{
+    Router,
+    extract::{
+        ConnectInfo, Path,
+        ws::{WebSocket, WebSocketUpgrade},
+    },
+    http::{HeaderMap, StatusCode},
+    response::{IntoResponse, Response},
+    routing::{any, get},
 };
-use hyper_util::rt::tokio::TokioIo;
-use hyper_util::service::TowerToHyperService;
-use pnet::datalink::NetworkInterface;
+use axum_server::tls_rustls::RustlsConfig;
+use bytes::Bytes;
+use futures_util::{SinkExt, StreamExt};
 use rustls::ServerConfig;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
-use sha1::{Digest, Sha1};
-use std::error::Error;
-use std::io::ErrorKind;
-use std::io::{self, BufReader};
-use std::net::{IpAddr, SocketAddr};
-use std::result::Result::Ok;
-use std::sync::Arc;
-use std::{future::Future, pin::Pin, time::Duration};
+use std::{
+    error::Error,
+    io::{self, BufReader, ErrorKind},
+    net::{IpAddr, SocketAddr},
+    sync::Arc,
+    time::Duration,
+};
 use tokio::net::TcpListener;
-use tokio::sync::broadcast; // Import broadcast for the kill switch
-use tokio_rustls::TlsAcceptor;
-use tokio_tungstenite::WebSocketStream;
-use tower::Service;
-#[derive(Clone)]
-struct HttpService {
-    peer_addr: SocketAddr,
-    ssl: bool,
+use tower::ServiceBuilder;
+
+fn build_router(ssl: bool) -> Router {
+    Router::new()
+        .route("/ws/*path", get(ws_handler))
+        .nest("/api/*path", api_router())
+        .route("/*path", any(static_handler))
+        .layer(ServiceBuilder::new())
+        .with_state(ssl)
 }
 
-impl Service<HttpRequest<Incoming>> for HttpService {
-    type Response = HttpResponse<Full<Bytes>>;
-    type Error = io::Error;
-    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+async fn ws_handler(
+    ws: WebSocketUpgrade,
+    Path(path): Path<String>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+) -> impl IntoResponse {
+    log_message(format!("WS connection from {}", addr));
 
-    fn poll_ready(
-        &mut self,
-        _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), Self::Error>> {
-        std::task::Poll::Ready(std::io::Result::Ok(()))
-    }
-
-    fn call(&mut self, req: HttpRequest<Incoming>) -> Self::Future {
-        let peer_ip = self.peer_addr.ip();
-
-        let is_acceptable = is_local_network(peer_ip) || self.ssl;
-
-        let (parts, body) = req.into_parts();
-
-        let method = parts.method.clone();
-        let path = parts.uri.path().to_string();
-        let headers = parts.headers.clone();
-
-        let fut = async move {
-            let is_websocket_upgrade = path.starts_with("/ws")
-                && method == Method::GET
-                && headers
-                    .get("connection")
-                    .map(|v| v.to_str().unwrap_or("").contains("Upgrade"))
-                    .unwrap_or(false)
-                && headers.get("upgrade").map(|v| v.to_str().unwrap_or("")) == Some("websocket");
-
-            if is_websocket_upgrade {
-                log_message("Attempting WebSocket upgrade on /ws");
-
-                if let Some(sec_websocket_key) = headers.get("sec-websocket-key") {
-                    let sec_websocket_key = sec_websocket_key.to_str().unwrap_or("").to_string();
-                    let sec_websocket_accept = calculate_accept_key(&sec_websocket_key);
-
-                    let response = HttpResponse::builder()
-                        .status(StatusCode::SWITCHING_PROTOCOLS)
-                        .header("Upgrade", "websocket")
-                        .header("Connection", "Upgrade")
-                        .header("Sec-WebSocket-Accept", sec_websocket_accept)
-                        .body(Full::new(Bytes::from("")))
-                        .unwrap();
-                    let req_for_upgrade = HttpRequest::from_parts(parts, body);
-                    let upgrades = upgrade::on(req_for_upgrade);
-
-                    match upgrades.await {
-                        std::result::Result::Ok(upgraded_stream) => {
-                            let raw_stream = TokioIo::new(upgraded_stream);
-
-                            let handshake_result = WebSocketStream::from_raw_socket(
-                                raw_stream,
-                                tungstenite::protocol::Role::Server,
-                                None,
-                            )
-                            .await;
-                            log_message(format!("Handling WebSocket connection",));
-                            let (writer, reader) = handshake_result.split();
-                            handle(path.clone(), writer, reader);
-                        }
-                        Err(e) => {
-                            log_message(format!(
-                                "WebSocket upgrade failed after response: {:?}",
-                                e
-                            ));
-                        }
-                    }
-                    Ok(response)
-                } else {
-                    log_message("No Sec-WebSocket-Key found in request headers");
-                    let response = HttpResponse::builder()
-                        .status(StatusCode::BAD_REQUEST)
-                        .body(Full::new(Bytes::from("Missing Sec-WebSocket-Key")))
-                        .unwrap();
-                    Ok(response)
-                }
-            } else if path.starts_with("/api") {
-                let whole_body = match body.collect().await {
-                    Ok(collected) => collected,
-                    Err(e) => {
-                        log_message(format!("Error collecting body: {}", e));
-                        return Ok(HttpResponse::builder()
-                            .status(StatusCode::INTERNAL_SERVER_ERROR)
-                            .body(Full::new(Bytes::from(format!(
-                                "Failed to read body: {}",
-                                e
-                            ))))
-                            .unwrap());
-                    }
-                };
-                let bytes = whole_body.to_bytes();
-
-                let body_string: Option<String> = match String::from_utf8(bytes.to_vec()) {
-                    Ok(s) => Some(s),
-                    Err(_) => None,
-                };
-
-                Ok(api::handle(&path, &is_acceptable, headers.clone(), body_string).await)
-            } else {
-                let mut path_parts: Vec<&str> = path.split("/").collect();
-                let name = path_parts.remove(path_parts.len() - 1);
-                let name = if name.is_empty() {
-                    "index.html"
-                } else if name.contains(".") && name.contains("?") {
-                    name.split("?").next().unwrap()
-                } else if name.contains(".") {
-                    name
-                } else {
-                    &format!("{}.html", name)
-                };
-                let code = if let Some(ext) = name.split(".").last() {
-                    match ext {
-                        "html" => "text/html",
-                        "css" => "text/css",
-                        "ico" => "image/x-icon",
-                        "png" => "image/png",
-                        "js" => "application/javascript",
-                        "json" => "application/json",
-                        _ => "application/octet-stream",
-                    }
-                } else {
-                    "application/octet-stream"
-                };
-                let (status, content, body_text): (StatusCode, &str, Vec<u8>) = {
-                    let content = load_file_vec(&format!("web{}/", path_parts.join("/")), name);
-                    if content.is_empty() {
-                        let content = load_file_vec("web", "404.html");
-                        if content.is_empty() {
-                            (
-                                StatusCode::NOT_FOUND,
-                                code,
-                                include_str!("../../static/web/404.html")
-                                    .as_bytes()
-                                    .to_vec(),
-                            )
-                        } else {
-                            (StatusCode::OK, code, content)
-                        }
-                    } else {
-                        (StatusCode::OK, code, content)
-                    }
-                };
-
-                let body = Full::new(Bytes::from(body_text.to_vec()));
-                let response = HttpResponse::builder()
-                    .header("Content-Type", content)
-                    .status(status)
-                    .body(body)
-                    .unwrap();
-                Ok(response)
-            }
-        };
-
-        Box::pin(fut.map_err(|err: color_eyre::eyre::ErrReport| {
-            io::Error::new(
-                io::ErrorKind::Other,
-                format!("Error in request handling: {}", err),
-            )
-        }))
-    }
+    ws.on_upgrade(move |socket| async move {
+        handle_ws(socket, path).await;
+    })
 }
 
-pub fn is_local_network(addr: IpAddr) -> bool {
-    match addr {
-        IpAddr::V4(v4) => {
-            let octets = v4.octets();
-            if octets[0] == 10 {
-                return true;
-            }
-            if octets[0] == 172 && (16..=31).contains(&octets[1]) {
-                return true;
-            }
-            if octets[0] == 192 && octets[1] == 168 {
-                return true;
-            }
-            if octets[0] == 127 {
-                return true;
-            }
-            if octets[0] == 169 && octets[1] == 254 {
-                return true;
-            }
+async fn handle_ws(socket: WebSocket, path: String) {
+    let (mut sender, mut receiver) = socket.split();
+    handle(path, sender, receiver);
+}
 
-            false
-        }
+async fn static_handler(Path(path): Path<String>) -> impl IntoResponse {
+    let mut parts: Vec<&str> = path.split('/').collect();
+    let name = parts.pop().unwrap_or("index.html");
 
-        IpAddr::V6(v6) => {
-            let segments = v6.segments();
-            if (segments[0] & 0xfe00) == 0xfc00 {
-                return true;
-            }
-            if (segments[0] & 0xffc0) == 0xfe80 {
-                return true;
-            }
-            if v6.is_loopback() {
-                return true;
-            }
+    let name = if name.is_empty() {
+        "index.html"
+    } else if name.contains('.') {
+        name
+    } else {
+        &format!("{}.html", name)
+    };
 
+    let content = load_file_vec(&format!("web{}/", parts.join("/")), name);
+
+    if content.is_empty() {
+        return (StatusCode::NOT_FOUND, load_file_vec("web", "404.html"));
+    }
+
+    let mime = match name.split('.').last().unwrap_or("") {
+        "html" => "text/html",
+        "css" => "text/css",
+        "js" => "application/javascript",
+        "json" => "application/json",
+        "png" => "image/png",
+        "ico" => "image/x-icon",
+        _ => "application/octet-stream",
+    };
+
+    (StatusCode::OK, content)
+}
+
+pub async fn start(port: u16) -> bool {
+    match load_tls_config() {
+        Ok(Some(tls)) => run_tls_server(port, tls).await,
+        Ok(_) => run_http_server(port).await,
+        Err(e) => {
+            log_message(format!("TLS config error: {}", e));
             false
         }
     }
 }
 
 async fn run_http_server(port: u16) -> bool {
-    let mut ip = "0.0.0.0".to_string();
-    for iface in pnet::datalink::interfaces() {
-        let iface: NetworkInterface = iface;
-        if iface.ips.len() > 0 {
-            let ipsv = format!("{}", iface.ips[0]);
-            let ips: &str = ipsv.split('/').next().unwrap();
-            if format!("{}", ips).starts_with("10.") || format!("{}", ips).starts_with("192.") {
-                ip = ips.to_string();
-            }
-        }
-    }
-    let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).await;
-    if let Err(e) = listener {
-        log_message(format!("Failed to bind to port {}: {:?}", port, e));
-        return false;
-    }
-    let listener = listener.unwrap();
-    log_message(format!(
-        "Standard Server listening for HTTP and WS on {}:{}",
-        ip, port
-    ));
+    let addr = SocketAddr::from(([0, 0, 0, 0], port));
+    let router = build_router(false);
 
-    // Create a broadcast channel for graceful shutdown signal
-    let (shutdown_tx, _) = broadcast::channel::<()>(1);
+    log_message(format!("HTTP Server running on {}", addr));
 
-    ACTIVE_TASKS.lock().unwrap().push("WebServer".to_string());
+    ACTIVE_TASKS.lock().unwrap().push("WebServer".into());
 
     tokio::spawn(async move {
-        loop {
-            tokio::select! {
-                // Monitor for shutdown signal
-                _ = async {
-                    loop {
-                        if *SHUTDOWN.read().await { return; }
-                        tokio::time::sleep(Duration::from_millis(100)).await;
-                    }
-                } => {
-                    log_message("Standard Server received shutdown signal.");
-                    // Send kill signal to all active connection tasks
-                    let _ = shutdown_tx.send(());
-                    break;
-                }
+        let listener = TcpListener::bind(addr).await.unwrap();
 
-                // Accept new connections
-                accepted = listener.accept() => {
-                    match accepted {
-                        std::result::Result::Ok((stream, addr)) => {
-                            let service = HttpService { ssl: false, peer_addr: addr };
-                            let io = TokioIo::new(stream);
+        axum::serve(
+            listener,
+            router.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .with_graceful_shutdown(wait_for_shutdown())
+        .await
+        .unwrap();
 
-                            // Subscribe to the shutdown signal for this specific connection
-                            let mut rx = shutdown_tx.subscribe();
-
-                            tokio::spawn(async move {
-                                // Prepare the connection future
-                                let conn = http1::Builder::new()
-                                    .preserve_header_case(true)
-                                    .title_case_headers(true)
-                                    .serve_connection(io, TowerToHyperService::new(service))
-                                    .with_upgrades();
-
-                                // Wait for either the connection to finish naturally OR the shutdown signal
-                                tokio::select! {
-                                    res = conn => {
-                                        if let Err(err) = res {
-                                            if let Some(io_err) = err.source().and_then(|e| e.downcast_ref::<io::Error>()) {
-                                                if io_err.kind() != io::ErrorKind::ConnectionReset
-                                                   && io_err.kind() != io::ErrorKind::BrokenPipe
-                                                {
-                                                    log_message(format!("Error serving connection: {:?}", err));
-                                                }
-                                            }
-                                        }
-                                    }
-                                    _ = rx.recv() => {
-                                        // Shutdown signal received.
-                                        // Dropping the 'conn' future here closes the socket immediately.
-                                    }
-                                }
-                            });
-                        }
-                        Err(e) => {
-                            log_message(format!("Error accepting connection: {:?}", e));
-                            tokio::time::sleep(Duration::from_millis(500)).await;
-                        }
-                    }
-                }
-            }
-        }
-
-        ACTIVE_TASKS
-            .lock()
-            .unwrap()
-            .retain(|t| !t.eq(&"WebServer".to_string()));
-        log_message("Standard Server shutdown complete.");
+        ACTIVE_TASKS.lock().unwrap().retain(|t| t != "WebServer");
+        log_message("HTTP Server shutdown complete.");
     });
 
     true
 }
 
-/// Runs the encrypted HTTPS/WSS server loop using the provided TLS config.
-async fn run_tls_server(port: u16, tls_config: Arc<ServerConfig>) -> bool {
-    let mut ip = "0.0.0.0".to_string();
-    for iface in pnet::datalink::interfaces() {
-        let iface: NetworkInterface = iface;
-        let ipsv = format!("{}", iface.ips[0]);
-        let ips: &str = ipsv.split('/').next().unwrap();
-        log_message(ips);
-        if format!("{}", ips).starts_with("10.") {
-            ip = ips.to_string();
-        }
-    }
+async fn run_tls_server(port: u16, tls: Arc<ServerConfig>) -> bool {
+    let addr = SocketAddr::from(([0, 0, 0, 0], port));
+    let router = build_router(true);
 
-    let acceptor = TlsAcceptor::from(tls_config);
+    let tls_config = RustlsConfig::from_config(tls);
 
-    let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).await;
-    if let Err(e) = listener {
-        log_message(format!("Failed to bind to port {}: {:?}", port, e));
-        return false;
-    }
-    let listener = listener.unwrap();
-    log_message(format!(
-        "Encrypted Server listening for HTTPS and WSS on {}:{}",
-        ip, port
-    ));
+    log_message(format!("HTTPS (HTTP/2) Server running on {}", addr));
 
-    // Create a broadcast channel for graceful shutdown signal
-    let (shutdown_tx, _) = broadcast::channel::<()>(1);
-
-    ACTIVE_TASKS.lock().unwrap().push("WebServer".to_string());
+    ACTIVE_TASKS.lock().unwrap().push("WebServer".into());
 
     tokio::spawn(async move {
-        loop {
-            tokio::select! {
-                // Monitor for shutdown signal
-                _ = async {
-                    loop {
-                        if *SHUTDOWN.read().await { return; }
-                        tokio::time::sleep(Duration::from_millis(100)).await;
-                    }
-                } => {
-                    log_message("Encrypted Server received shutdown signal.");
-                    // Send kill signal to all active connection tasks
-                    let _ = shutdown_tx.send(());
-                    break;
-                }
+        axum_server::bind_rustls(addr, tls_config)
+            .serve(router.into_make_service_with_connect_info::<SocketAddr>())
+            .await
+            .unwrap();
 
-                // Accept new connections
-                accepted = listener.accept() => {
-                    match accepted {
-                        std::result::Result::Ok((stream, addr)) => {
-                            let service = HttpService { ssl: true, peer_addr: addr };
-                            let acceptor = acceptor.clone();
-
-                            // Subscribe to the shutdown signal for this specific connection
-                            let mut rx = shutdown_tx.subscribe();
-
-                            tokio::spawn(async move {
-                                // Perform TLS handshake
-                                let tls_stream = match acceptor.accept(stream).await {
-                                    Ok(s) => s,
-                                    Err(e) => {
-                                        if e.kind() != io::ErrorKind::Interrupted {
-                                            log_message(format!("TLS Handshake error: {:?}", e));
-                                        }
-                                        return;
-                                    }
-                                };
-                                let io = TokioIo::new(tls_stream);
-
-                                // Prepare connection future
-                                let conn = http1::Builder::new()
-                                    .preserve_header_case(true)
-                                    .title_case_headers(true)
-                                    .serve_connection(io, TowerToHyperService::new(service))
-                                    .with_upgrades();
-
-                                // Wait for either the connection to finish naturally OR the shutdown signal
-                                tokio::select! {
-                                    res = conn => {
-                                        if let Err(err) = res {
-                                            if let Some(io_err) = err.source().and_then(|e| e.downcast_ref::<io::Error>()) {
-                                                if io_err.kind() != io::ErrorKind::ConnectionReset
-                                                   && io_err.kind() != io::ErrorKind::BrokenPipe
-                                                {
-                                                    log_message(format!("Error serving connection: {:?}", err));
-                                                }
-                                            }
-                                        }
-                                    }
-                                    _ = rx.recv() => {
-                                        // Shutdown signal received.
-                                        // Dropping the 'conn' future here closes the socket immediately.
-                                    }
-                                }
-                            });
-                        }
-                        Err(e) => {
-                            log_message(format!("Error accepting connection: {:?}", e));
-                            tokio::time::sleep(Duration::from_millis(500)).await;
-                        }
-                    }
-                }
-            }
-        }
-
-        ACTIVE_TASKS
-            .lock()
-            .unwrap()
-            .retain(|t| !t.eq(&"WebServer".to_string()));
-        log_message("Encrypted Server shutdown complete.");
+        ACTIVE_TASKS.lock().unwrap().retain(|t| t != "WebServer");
+        log_message("HTTPS Server shutdown complete.");
     });
+
     true
 }
 
-pub async fn start(port: u16) -> bool {
-    let tls_result = load_tls_config();
-
-    match tls_result {
-        Ok(Some(tls_config)) => run_tls_server(port, tls_config).await,
-        Ok(_) => run_http_server(port).await,
-        Err(e) => {
-            log_message(format!("Fatal error during TLS config load: {}", e));
-            false
+async fn wait_for_shutdown() {
+    loop {
+        if *SHUTDOWN.read().await {
+            log_message("Shutdown signal received.");
+            break;
         }
+        tokio::time::sleep(Duration::from_millis(100)).await;
     }
 }
-fn calculate_accept_key(key: &str) -> String {
-    let websocket_guid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
-    let mut sha1 = Sha1::new();
-    sha1.update(key.as_bytes());
-    sha1.update(websocket_guid.as_bytes());
-    let result = sha1.finalize();
-    STANDARD.encode(result) // Base64 encode the result
-}
-
-/// Loads TLS config. Returns Ok(None) if cert files are not found, and an error if parsing fails.
 fn load_tls_config() -> Result<Option<Arc<ServerConfig>>, Box<dyn Error>> {
     let cert_file_res = load_file_buf("certs", "cert.pem");
     let key_file_res = load_file_buf("certs", "cert.key");
 
-    // Check if certificate files are present. If not, return None.
     let cert_file_buf = match cert_file_res {
         Ok(b) => b,
         Err(e) if e.kind() == ErrorKind::NotFound => {
@@ -542,4 +214,20 @@ fn load_tls_config() -> Result<Option<Arc<ServerConfig>>, Box<dyn Error>> {
         .map_err(|e| io::Error::new(ErrorKind::Other, e.to_string()))?;
 
     Ok(Some(Arc::new(config)))
+}
+pub fn is_local_network(addr: IpAddr) -> bool {
+    match addr {
+        IpAddr::V4(v4) => {
+            let o = v4.octets();
+            o[0] == 10
+                || (o[0] == 172 && (16..=31).contains(&o[1]))
+                || (o[0] == 192 && o[1] == 168)
+                || o[0] == 127
+                || (o[0] == 169 && o[1] == 254)
+        }
+        IpAddr::V6(v6) => {
+            let s = v6.segments();
+            (s[0] & 0xfe00) == 0xfc00 || (s[0] & 0xffc0) == 0xfe80 || v6.is_loopback()
+        }
+    }
 }

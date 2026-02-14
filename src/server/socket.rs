@@ -3,19 +3,15 @@ use crate::communities::{community_connection::CommunityConnection, community_ma
 use crate::gui::log_panel::log_message;
 use crate::omikron::omikron_connection::OmikronConnection;
 
+use axum::extract::ws::{Message, Utf8Bytes, WebSocket};
 use futures::StreamExt;
 use futures::stream::SplitSink;
 use futures::stream::SplitStream;
 use hyper::upgrade::Upgraded;
 use hyper_util::rt::TokioIo;
 use std::sync::Arc;
-use tungstenite::Message;
 
-pub fn handle(
-    path: String,
-    writer: SplitSink<tokio_tungstenite::WebSocketStream<TokioIo<Upgraded>>, Message>,
-    reader: SplitStream<tokio_tungstenite::WebSocketStream<TokioIo<Upgraded>>>,
-) {
+pub fn handle(path: String, writer: SplitSink<Websocket, Message>, reader: SplitStream<Websocket>) {
     tokio::spawn(async move {
         if path.starts_with("/ws/users/") {
             OmikronConnection::client(writer, reader).await;
