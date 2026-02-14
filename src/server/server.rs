@@ -1,7 +1,11 @@
 use crate::gui::log_panel::log_message;
+<<<<<<< HEAD
 use crate::server::api::{self, api_router};
+=======
+>>>>>>> f0d04474165a8c397b527eedd59263390462af95
 use crate::server::socket::handle;
-use crate::util::file_util::{load_file_buf, load_file_vec};
+use crate::server::{api, web_path_parser};
+use crate::util::file_util::load_file_buf;
 use crate::{ACTIVE_TASKS, SHUTDOWN};
 
 use axum::{
@@ -27,6 +31,7 @@ use std::{
     time::Duration,
 };
 use tokio::net::TcpListener;
+<<<<<<< HEAD
 use tower::ServiceBuilder;
 
 fn build_router(ssl: bool) -> Router {
@@ -36,6 +41,16 @@ fn build_router(ssl: bool) -> Router {
         .route("/*path", any(static_handler))
         .layer(ServiceBuilder::new())
         .with_state(ssl)
+=======
+use tokio::sync::broadcast;
+use tokio_rustls::TlsAcceptor;
+use tokio_tungstenite::WebSocketStream;
+use tower::Service;
+#[derive(Clone)]
+struct HttpService {
+    peer_addr: SocketAddr,
+    ssl: bool,
+>>>>>>> f0d04474165a8c397b527eedd59263390462af95
 }
 
 async fn ws_handler(
@@ -45,9 +60,140 @@ async fn ws_handler(
 ) -> impl IntoResponse {
     log_message(format!("WS connection from {}", addr));
 
+<<<<<<< HEAD
     ws.on_upgrade(move |socket| async move {
         handle_ws(socket, path).await;
     })
+=======
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(std::io::Result::Ok(()))
+    }
+
+    fn call(&mut self, req: HttpRequest<Incoming>) -> Self::Future {
+        let peer_ip = self.peer_addr.ip();
+
+        let is_acceptable = is_local_network(peer_ip) || self.ssl;
+
+        let (parts, body) = req.into_parts();
+
+        let method = parts.method.clone();
+        let path = parts.uri.path().to_string();
+        let headers = parts.headers.clone();
+
+        let fut = async move {
+            let is_websocket_upgrade = path.starts_with("/ws")
+                && method == Method::GET
+                && headers
+                    .get("connection")
+                    .map(|v| v.to_str().unwrap_or("").contains("Upgrade"))
+                    .unwrap_or(false)
+                && headers.get("upgrade").map(|v| v.to_str().unwrap_or("")) == Some("websocket");
+
+            if is_websocket_upgrade {
+                log_message("Attempting WebSocket upgrade on /ws");
+
+                if let Some(sec_websocket_key) = headers.get("sec-websocket-key") {
+                    let sec_websocket_key = sec_websocket_key.to_str().unwrap_or("").to_string();
+                    let sec_websocket_accept = calculate_accept_key(&sec_websocket_key);
+
+                    let response = HttpResponse::builder()
+                        .status(StatusCode::SWITCHING_PROTOCOLS)
+                        .header("Upgrade", "websocket")
+                        .header("Connection", "Upgrade")
+                        .header("Sec-WebSocket-Accept", sec_websocket_accept)
+                        .body(Full::new(Bytes::from("")))
+                        .unwrap();
+                    let req_for_upgrade = HttpRequest::from_parts(parts, body);
+                    let upgrades = upgrade::on(req_for_upgrade);
+
+                    match upgrades.await {
+                        std::result::Result::Ok(upgraded_stream) => {
+                            let raw_stream = TokioIo::new(upgraded_stream);
+
+                            let handshake_result = WebSocketStream::from_raw_socket(
+                                raw_stream,
+                                tungstenite::protocol::Role::Server,
+                                None,
+                            )
+                            .await;
+                            log_message(format!("Handling WebSocket connection",));
+                            let (writer, reader) = handshake_result.split();
+                            handle(path.clone(), writer, reader);
+                        }
+                        Err(e) => {
+                            log_message(format!(
+                                "WebSocket upgrade failed after response: {:?}",
+                                e
+                            ));
+                        }
+                    }
+                    Ok(response)
+                } else {
+                    log_message("No Sec-WebSocket-Key found in request headers");
+                    let response = HttpResponse::builder()
+                        .status(StatusCode::BAD_REQUEST)
+                        .body(Full::new(Bytes::from("Missing Sec-WebSocket-Key")))
+                        .unwrap();
+                    Ok(response)
+                }
+            } else if path.starts_with("/api") {
+                let whole_body = match body.collect().await {
+                    Ok(collected) => collected,
+                    Err(e) => {
+                        log_message(format!("Error collecting body: {}", e));
+                        return Ok(HttpResponse::builder()
+                            .status(StatusCode::INTERNAL_SERVER_ERROR)
+                            .body(Full::new(Bytes::from(format!(
+                                "Failed to read body: {}",
+                                e
+                            ))))
+                            .unwrap());
+                    }
+                };
+                let bytes = whole_body.to_bytes();
+
+                let body_string: Option<String> = match String::from_utf8(bytes.to_vec()) {
+                    Ok(s) => Some(s),
+                    Err(_) => None,
+                };
+
+                Ok(api::handle(&path, &is_acceptable, headers.clone(), body_string).await)
+            } else {
+                let whole_body = match body.collect().await {
+                    Ok(collected) => collected,
+                    Err(e) => {
+                        log_message(format!("Error collecting body: {}", e));
+                        return Ok(HttpResponse::builder()
+                            .status(StatusCode::INTERNAL_SERVER_ERROR)
+                            .body(Full::new(Bytes::from(format!(
+                                "Failed to read body: {}",
+                                e
+                            ))))
+                            .unwrap());
+                    }
+                };
+                let bytes = whole_body.to_bytes();
+
+                let body_string: Option<String> = match String::from_utf8(bytes.to_vec()) {
+                    Ok(s) => Some(s),
+                    Err(_) => None,
+                };
+
+                Ok(web_path_parser::handle(&path, headers, body_string).await)
+            }
+        };
+
+        Box::pin(fut.map_err(|err: color_eyre::eyre::ErrReport| {
+            io::Error::new(
+                io::ErrorKind::Other,
+                format!("Error in request handling: {}", err),
+            )
+        }))
+    }
+>>>>>>> f0d04474165a8c397b527eedd59263390462af95
 }
 
 async fn handle_ws(socket: WebSocket, path: String) {
