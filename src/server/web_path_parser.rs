@@ -8,7 +8,7 @@ use json::JsonValue;
 
 use crate::util::file_util::load_file_vec;
 
-fn codec_for_ext(ext: &str) -> &'static str {
+pub fn codec_for_ext(ext: &str) -> &'static str {
     match ext {
         "html" => "text/html; charset=utf-8",
         "css" => "text/css",

@@ -1,3 +1,4 @@
+use reqwest::Client;
 use std::ffi::OsStr;
 use std::fs::{self, File};
 use std::io::{self, BufReader, Read};
@@ -9,15 +10,6 @@ use walkdir::WalkDir;
 use zip::ZipArchive;
 
 use crate::gui::log_panel::log_message;
-
-pub fn delete_file(path: &str, name: &str) -> bool {
-    let dir = Path::new(&get_directory()).join(path);
-    let file = dir.join(name);
-    if !file.exists() {
-        return false;
-    }
-    fs::remove_file(file).is_ok()
-}
 
 #[allow(dead_code)]
 pub fn delete_directory(path: &str) -> bool {
@@ -233,21 +225,22 @@ pub fn get_used_ram() -> String {
     format!("{}/{}", design_byte(used), design_byte(total))
 }
 
-use reqwest::Client;
-
 pub async fn download_zip(url: &str, zip_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let client = Client::new();
-
-    let response = client.get(url).send().await?;
+    let mut response = client.get(url).send().await?;
 
     if !response.status().is_success() {
-        return Err(format!("Failed to download file: Status {}", response.status()).into());
+        let err_msg = format!("Failed to download file: Status {}", response.status());
+        log_message(err_msg.clone());
+        return Err(err_msg.into());
     }
 
     let mut zip_file = tokio::fs::File::create(zip_path).await?;
-    let body = response.bytes().await?;
-    zip_file.write_all(&body).await?;
+    while let Some(chunk) = response.chunk().await? {
+        zip_file.write_all(&chunk).await?;
+    }
 
+    zip_file.flush().await?;
     Ok(())
 }
 
@@ -344,9 +337,14 @@ pub async fn download_and_extract_zip(url: &str, as_name: &str) {
     let zip_path_clone = zip_path.clone();
     let target_dir_clone = target_dir.clone();
     let extract_result = extract_zip_contents_to_folder(&zip_path_clone, &target_dir_clone);
-    if let Err(e) = extract_result {
-        log_message(format!("Panic during ZIP extraction: {}", e));
-    }
+
+    let successful = match extract_result {
+        Ok(()) => true,
+        Err(e) => {
+            log_message(format!("Error during ZIP extraction: {}", e));
+            false
+        }
+    };
 
     if let Err(e) = tokio::fs::remove_file(&zip_path).await {
         log_message(format!(
@@ -354,7 +352,7 @@ pub async fn download_and_extract_zip(url: &str, as_name: &str) {
             zip_path.display(),
             e
         ));
-    } else {
-        log_message("Downloaded ZIP file");
+    } else if successful {
+        log_message("Downloaded and extracted ZIP file successfully.");
     }
 }

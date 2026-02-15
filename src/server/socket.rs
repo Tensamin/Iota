@@ -1,18 +1,14 @@
-use crate::SHUTDOWN;
-use crate::communities::{community_connection::CommunityConnection, community_manager};
-use crate::gui::log_panel::log_message;
-use crate::omikron::omikron_connection::OmikronConnection;
-
-use axum::extract::ws::{Message, Utf8Bytes, WebSocket};
-use futures::StreamExt;
+use axum::extract::ws::{Message, WebSocket};
 use futures::stream::SplitSink;
 use futures::stream::SplitStream;
-use hyper::upgrade::Upgraded;
-use hyper_util::rt::TokioIo;
-use std::sync::Arc;
 
-pub fn handle(path: String, writer: SplitSink<Websocket, Message>, reader: SplitStream<Websocket>) {
+pub fn handle(
+    _path: String,
+    _writer: SplitSink<WebSocket, Message>,
+    _reader: SplitStream<WebSocket>,
+) {
     tokio::spawn(async move {
+        /*
         if path.starts_with("/ws/users/") {
             OmikronConnection::client(writer, reader).await;
         } else if path.starts_with("/ws/community/") {
@@ -59,5 +55,6 @@ pub fn handle(path: String, writer: SplitSink<Websocket, Message>, reader: Split
                 }
             }
         }
+        */
     });
 }

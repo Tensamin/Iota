@@ -1,11 +1,11 @@
 use crate::server::server::is_local_network;
+use crate::util::config_util::CONFIG;
 use axum::routing::{get, post};
 use axum::{
-    extract::{ConnectInfo, Json, Path, State},
+    extract::{ConnectInfo, Json, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
 };
-use json::JsonValue;
 use serde_json::{Value, json};
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -26,7 +26,7 @@ pub async fn settings_set(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(ssl): State<bool>,
     headers: HeaderMap,
-) -> impl IntoResponse {
+) -> Response {
     if !is_allowed(addr, ssl) {
         return forbidden();
     }
@@ -36,11 +36,11 @@ pub async fn settings_set(
 
     match (key, value) {
         (Some(k), Some(v)) => {
-            crate::util::config_util::CONFIG
+            let _ = CONFIG
                 .write()
                 .await
                 .config
-                .insert(k, v);
+                .insert(&k.to_string(), v.to_string());
 
             success()
         }
@@ -51,36 +51,38 @@ pub async fn settings_set(
 pub async fn settings_get(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(ssl): State<bool>,
-) -> impl IntoResponse {
+) -> Response {
     if !is_allowed(addr, ssl) {
         return forbidden();
     }
-
-    (StatusCode::OK, Json(CONFIG.read().await.config.clone())).into_response()
+    let config = CONFIG.read().await.config.clone();
+    let serde_config: Value = serde_json::to_value(config.to_string()).unwrap();
+    (StatusCode::OK, Json(serde_config)).into_response()
 }
 pub async fn communities_get(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(ssl): State<bool>,
-) -> impl IntoResponse {
+) -> Response {
     if !is_allowed(addr, ssl) {
         return forbidden();
     }
 
     let communities = crate::communities::community_manager::get_communities().await;
 
-    let mut list = JsonValue::new_array();
+    let mut list = Vec::new();
 
     for c in communities {
-        list.push(c.frontend().await);
+        let val = c.frontend().await;
+        let s_val: Value = serde_json::to_value(val.to_string()).unwrap();
+        list.push(s_val);
     }
-
     (StatusCode::OK, Json(list)).into_response()
 }
 pub async fn communities_add(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(ssl): State<bool>,
     Json(payload): Json<Value>,
-) -> impl IntoResponse {
+) -> Response {
     if !is_allowed(addr, ssl) {
         return forbidden();
     }
@@ -97,22 +99,28 @@ pub async fn communities_add(
 pub async fn users_get(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(ssl): State<bool>,
-) -> impl IntoResponse {
+) -> Response {
     if !is_allowed(addr, ssl) {
         return forbidden();
     }
 
     let users = crate::users::user_manager::get_users();
 
-    let list: Vec<_> = users.into_iter().map(|u| u.frontend()).collect();
+    let list: Vec<_> = users
+        .into_iter()
+        .map(|u| {
+            let val = u.frontend();
+            serde_json::to_value(val.to_string()).unwrap()
+        })
+        .collect();
 
-    Json(list)
+    (StatusCode::OK, Json(list)).into_response()
 }
 pub async fn users_remove(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(ssl): State<bool>,
     Json(payload): Json<Value>,
-) -> impl IntoResponse {
+) -> Response {
     if !is_allowed(addr, ssl) {
         return forbidden();
     }
@@ -128,18 +136,20 @@ pub async fn users_add(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(ssl): State<bool>,
     Json(payload): Json<Value>,
-) -> impl IntoResponse {
+) -> Response {
     if !is_allowed(addr, ssl) {
         return forbidden();
     }
 
     let username = match payload.get("username").and_then(|v| v.as_str()) {
         Some(u) => u,
-        None => return error().into_response(),
+        None => return error(),
     };
 
     if let (Some(user), Some(_)) = crate::users::user_manager::create_user(username).await {
-        (StatusCode::OK, Json(user.frontend())).into_response()
+        let val = user.frontend();
+        let s_val: Value = serde_json::to_value(val.to_string()).unwrap();
+        (StatusCode::OK, Json(s_val)).into_response()
     } else {
         error()
     }
@@ -147,7 +157,7 @@ pub async fn users_add(
 pub async fn shutdown(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(ssl): State<bool>,
-) -> impl IntoResponse {
+) -> Response {
     if !is_allowed(addr, ssl) {
         return forbidden();
     }
@@ -159,7 +169,7 @@ pub async fn shutdown(
 pub async fn reload(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(ssl): State<bool>,
-) -> impl IntoResponse {
+) -> Response {
     if !is_allowed(addr, ssl) {
         return forbidden();
     }
