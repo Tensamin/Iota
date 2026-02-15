@@ -205,10 +205,10 @@ pub async fn run_consent_ui(
                 let mut optional_lines: Vec<i16> =
                     if size.width > 143 {
                         if tos_needed || pp_needed {
-                            text_lines.push(Line::from("By selecting Downgrade, you confirm that you have agree to the End User License Agreement and applicable Terms of Service."));
+                            text_lines.push(Line::from("By selecting Downgrade, you confirm that you agree to the End User License Agreement and applicable Terms of Service."));
                             text_lines.push(Line::from("On Downgrade: Tensamin Services will deactivate once these changes apply."));
                         } else {
-                            text_lines.push(Line::from("By selecting Continue, you confirm that you have agree to the End User License Agreement and applicable Terms of Service."));
+                            text_lines.push(Line::from("By selecting Continue, you confirm that you agree to the End User License Agreement and applicable Terms of Service."));
                         }
                         text_lines.push(Line::from(""));
                         text_lines.push(Line::from("Tensamin services require acceptance of the Terms of Service and Privacy Policy."));
@@ -222,11 +222,11 @@ pub async fn run_consent_ui(
                         }
                     } else if size.width > 92 {
                         if tos_needed || pp_needed {
-                            text_lines.push(Line::from("By selecting Continue, you confirm that you have agree to the End User"));
+                            text_lines.push(Line::from("By selecting Continue, you confirm that you agree to the End User"));
                             text_lines.push(Line::from("License Agreement and applicable Terms of Service."));
                             text_lines.push(Line::from("On Downgrade: Tensamin Services will deactivate once these changes apply."));
                         } else {
-                            text_lines.push(Line::from("By selecting Continue, you confirm that you have agree to the End User"));
+                            text_lines.push(Line::from("By selecting Continue, you confirm that you agree to the End User"));
                             text_lines.push(Line::from("License Agreement and applicable Terms of Service."));
                         }
 
@@ -242,11 +242,11 @@ pub async fn run_consent_ui(
                         }
                     } else if size.width > 73 {
                         if tos_needed || pp_needed {
-                            text_lines.push(Line::from("By selecting Continue, you confirm that you have read, understood and"));
+                            text_lines.push(Line::from("By selecting Continue, you confirm that you read, understood and"));
                             text_lines.push(Line::from("agree to the End User License Agreement and applicable Terms of Service."));
                             text_lines.push(Line::from("On Downgrade: Tensamin Services will deactivate once these changes apply."));
                         } else {
-                            text_lines.push(Line::from("By selecting Continue, you confirm that you have read, understood and"));
+                            text_lines.push(Line::from("By selecting Continue, you confirm that you read, understood and"));
                             text_lines.push(Line::from("agree to the End User License Agreement and applicable Terms of Service."));
                         }
                         text_lines.push(Line::from("",));
@@ -262,13 +262,13 @@ pub async fn run_consent_ui(
                         }
                     } else {
                         if tos_needed || pp_needed {
-                            text_lines.push(Line::from("By selecting Continue, you confirm that you have",));
+                            text_lines.push(Line::from("By selecting Continue, you confirm that you",));
                             text_lines.push(Line::from("agree to the End User License",));
                             text_lines.push(Line::from("Agreement and applicable Terms of Service.",));
                             text_lines.push(Line::from("On Downgrade: Tensamin Services will deactivate"));
                             text_lines.push(Line::from("once these changes apply."));
                         } else {
-                            text_lines.push(Line::from("By selecting Continue, you confirm that you have",));
+                            text_lines.push(Line::from("By selecting Continue, you confirm that you",));
                             text_lines.push(Line::from("agree to the End User License",));
                             text_lines.push(Line::from("Agreement and applicable Terms of Service.",));
                         }

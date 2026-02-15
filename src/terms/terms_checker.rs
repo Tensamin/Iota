@@ -74,7 +74,7 @@ pub async fn run_consent_ui(mut consent: ConsentState) -> ConsentState {
                             vec![8, 3, 8, 5],
                             vec![
                                 "",
-                                "By selecting Continue, you confirm that you have agree to the End User License Agreement and applicable Terms of Service.",
+                                "By selecting Continue, you confirm that you agree to the End User License Agreement and applicable Terms of Service.",
                                 "",
                                 "Tensamin services require acceptance of the Terms of Service and Privacy Policy.",
                                 "",
@@ -86,8 +86,8 @@ pub async fn run_consent_ui(mut consent: ConsentState) -> ConsentState {
                             vec![9, 3, 9, 5],
                             vec![
                                 "",
-                                "By selecting Continue, you confirm that you have agree to the End User",
-                                "License Agreement and applicable Terms of Service.",
+                                "By selecting Continue, you confirm that you agree to the End User License",
+                                "Agreement and applicable Terms of Service.",
                                 "",
                                 "Tensamin services require acceptance of the Terms of Service and Privacy Policy.",
                                 "",
@@ -99,8 +99,8 @@ pub async fn run_consent_ui(mut consent: ConsentState) -> ConsentState {
                             vec![9, 3, 9, 5],
                             vec![
                                 "",
-                                "By selecting Continue, you confirm that you have read, understood and",
-                                "agree to the End User License Agreement and applicable Terms of Service.",
+                                "By selecting Continue, you confirm that you agree to the",
+                                "End User License Agreement and applicable Terms of Service.",
                                 "",
                                 "Tensamin services require acceptance of the ToS and Privacy Policy.",
                                 "",
@@ -113,9 +113,9 @@ pub async fn run_consent_ui(mut consent: ConsentState) -> ConsentState {
                             vec![10, 3, 11, 5],
                             vec![
                                 "",
-                                "By selecting Continue, you confirm that you have",
-                                "agree to the End User License",
-                                "Agreement and applicable Terms of Service.",
+                                "By selecting Continue, you confirm that you agree",
+                                "to the End User License Agreement and",
+                                "applicable Terms of Service.",
                                 "",
                                 "Tensamin services require acceptance of the",
                                 "Terms of Service and Privacy Policy.",
