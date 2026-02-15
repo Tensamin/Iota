@@ -14,11 +14,8 @@ use crate::{
 };
 use dashmap::DashMap;
 use futures::Stream;
-use futures::stream::{SplitSink, SplitStream};
 use futures_util::sink::Sink;
 use futures_util::{SinkExt, StreamExt};
-use hyper::upgrade::Upgraded;
-use hyper_util::rt::TokioIo;
 use json::JsonValue;
 use json::number::Number;
 use std::collections::HashMap;
@@ -52,25 +49,6 @@ impl OmikronConnection {
             message_send_times: Arc::new(Mutex::new(HashMap::new())),
             is_connected: Arc::new(Mutex::new(false)),
         }
-    }
-    pub async fn client(
-        writer: SplitSink<tokio_tungstenite::WebSocketStream<TokioIo<Upgraded>>, Message>,
-        reader: SplitStream<tokio_tungstenite::WebSocketStream<TokioIo<Upgraded>>>,
-    ) -> Arc<Self> {
-        let connection = Arc::new(Self {
-            writer: Arc::new(Mutex::new(Some(Box::new(writer)
-                as Box<dyn Sink<Message, Error = tungstenite::Error> + Send + Unpin>))),
-            waiting: Arc::new(DashMap::new()),
-            last_ping: Arc::new(Mutex::new(-1)),
-            message_send_times: Arc::new(Mutex::new(HashMap::new())),
-            is_connected: Arc::new(Mutex::new(true)),
-        });
-        let boxed_reader: Box<
-            dyn Stream<Item = Result<Message, tungstenite::Error>> + Send + Unpin,
-        > = Box::new(reader);
-
-        connection.spawn_listener(boxed_reader).await;
-        connection
     }
     pub async fn is_connected(&self) -> bool {
         *self.is_connected.lock().await

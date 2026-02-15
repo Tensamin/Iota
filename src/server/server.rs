@@ -25,10 +25,12 @@ async fn ws_handler(req: HttpRequest, stream: web::Payload) -> Result<impl Respo
     ws::start(session, &req, stream)
 }
 
-pub async fn start(port: u16) -> bool {
-    let (tx, rx) = std::sync::mpsc::channel();
+use tokio::sync::oneshot;
 
-    let server_task = tokio::spawn(async move {
+pub async fn start(port: u16) -> bool {
+    let (tx, rx) = oneshot::channel::<ServerHandle>();
+
+    let _ = tokio::spawn(async move {
         let server = match load_tls_config() {
             Ok(Some(tls_config)) => {
                 log_message(format!("HTTPS (HTTP/2) Server running on 0.0.0.0:{}", port));
@@ -72,13 +74,14 @@ pub async fn start(port: u16) -> bool {
         log_message("Web Server shutdown complete.");
     });
 
-    let server_handle = rx.recv().unwrap();
-
-    tokio::spawn(async move {
-        wait_for_shutdown(server_handle).await;
-    });
-
-    server_task.await.is_ok()
+    if let Ok(server_handle) = rx.await {
+        tokio::spawn(async move {
+            wait_for_shutdown(server_handle).await;
+        });
+        true
+    } else {
+        false
+    }
 }
 
 async fn wait_for_shutdown(server_handle: ServerHandle) {
