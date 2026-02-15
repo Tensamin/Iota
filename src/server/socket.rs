@@ -1,60 +1,97 @@
-use axum::extract::ws::{Message, WebSocket};
-use futures::stream::SplitSink;
-use futures::stream::SplitStream;
+use crate::{
+    data::communication::{CommunicationType, CommunicationValue},
+    gui::log_panel::log_message,
+};
+use actix::{Actor, ActorContext, AsyncContext, StreamHandler};
+use actix_web_actors::ws;
+use std::time::{Duration, Instant};
 
-pub fn handle(
-    _path: String,
-    _writer: SplitSink<WebSocket, Message>,
-    _reader: SplitStream<WebSocket>,
-) {
-    tokio::spawn(async move {
-        /*
-        if path.starts_with("/ws/users/") {
-            OmikronConnection::client(writer, reader).await;
-        } else if path.starts_with("/ws/community/") {
-            let community_id = path.split("/").nth(3).unwrap();
-            log_message(format!("Community: {}", community_id));
-            if let Some(community) = community_manager::get_community(community_id).await {
-                log_message("Connected");
-                let community_conn: Arc<CommunityConnection> =
-                    Arc::from(CommunityConnection::new(writer, reader, community));
-                loop {
-                    if *SHUTDOWN.read().await {
-                        break;
-                    }
-                    let msg_result = {
-                        let mut session_lock = community_conn.receiver.write().await;
-                        session_lock.next().await
-                    };
+const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 
-                    match msg_result {
-                        Some(Ok(msg)) => {
-                            if msg.is_text() {
-                                let text = msg.into_text().unwrap();
-                                community_conn
-                                    .clone()
-                                    .handle_message(text.to_string())
-                                    .await;
-                            } else if msg.is_close() {
-                                log_message(format!("Closing: {}", msg));
-                                community_conn.handle_close().await;
-                                return;
-                            }
-                        }
-                        Some(Err(e)) => {
-                            log_message(format!("Closing ERR: {}", e));
-                            community_conn.handle_close().await;
-                            return;
-                        }
-                        None => {
-                            log_message("Closed Session me!");
-                            community_conn.handle_close().await;
-                            return;
-                        }
-                    }
-                }
-            }
+use actix::Message;
+
+#[derive(Message)]
+#[rtype(result = "()")]
+pub struct WsSendMessage(pub String);
+
+impl actix::Handler<WsSendMessage> for WsSession {
+    type Result = ();
+
+    fn handle(&mut self, msg: WsSendMessage, ctx: &mut Self::Context) {
+        ctx.text(msg.0);
+    }
+}
+
+pub struct WsSession {
+    path: String,
+    last_heartbeat: Instant,
+}
+
+impl WsSession {
+    pub fn new(path: String) -> Self {
+        Self {
+            path,
+            last_heartbeat: Instant::now(),
         }
-        */
-    });
+    }
+    fn start_heartbeat(&self, ctx: &mut ws::WebsocketContext<Self>) {
+        ctx.run_interval(Duration::from_secs(5), |act, ctx| {
+            if Instant::now().duration_since(act.last_heartbeat) > IDLE_TIMEOUT {
+                ctx.close(None);
+                ctx.stop();
+                return;
+            }
+
+            let ping = CommunicationValue::new(CommunicationType::ping)
+                .to_json()
+                .to_string();
+
+            ctx.text(ping);
+        });
+    }
+}
+
+impl Actor for WsSession {
+    type Context = ws::WebsocketContext<Self>;
+
+    fn started(&mut self, ctx: &mut Self::Context) {
+        self.start_heartbeat(ctx);
+
+        log_message(format!("WebSocket session started for path: {}", self.path));
+
+        if self.path.starts_with("/ws/users/") {
+            log_message(format!("UserConnection handling is not yet implemented.",));
+        } else if self.path.starts_with("/ws/community/") {
+            let community_id = self.path.split('/').nth(3).unwrap_or_default();
+            log_message(format!(
+                "CommunityConnection handling for {} is not yet implemented.",
+                community_id
+            ));
+        }
+    }
+
+    fn stopped(&mut self, _ctx: &mut Self::Context) {
+        log_message(format!("WebSocket session stopped for path: {}", self.path));
+    }
+}
+
+impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
+    fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
+        match msg {
+            Ok(ws::Message::Ping(msg)) => {
+                self.last_heartbeat = Instant::now();
+                ctx.pong(&msg);
+            }
+            Ok(ws::Message::Pong(_)) => self.last_heartbeat = Instant::now(),
+            Ok(ws::Message::Text(_)) => self.last_heartbeat = Instant::now(),
+            Ok(ws::Message::Close(reason)) => {
+                ctx.close(reason);
+                ctx.stop();
+            }
+            Err(_) => {
+                ctx.stop();
+            }
+            _ => ctx.stop(),
+        }
+    }
 }

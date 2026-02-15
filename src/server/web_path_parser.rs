@@ -1,14 +1,10 @@
-use std::path::{Path, PathBuf};
-
-use axum::http::HeaderValue;
-use http_body_util::Full;
-use hyper::body::Bytes;
-use hyper::{HeaderMap, Response as HttpResponse, StatusCode};
+use actix_web::{HttpRequest, HttpResponse, web};
 use json::JsonValue;
+use std::path::{Path, PathBuf};
 
 use crate::util::file_util::load_file_vec;
 
-pub fn codec_for_ext(ext: &str) -> &'static str {
+fn codec_for_ext(ext: &str) -> &'static str {
     match ext {
         "html" => "text/html; charset=utf-8",
         "css" => "text/css",
@@ -21,81 +17,77 @@ pub fn codec_for_ext(ext: &str) -> &'static str {
     }
 }
 
-pub async fn handle(
-    path: &str,
-    _headers: HeaderMap<HeaderValue>,
-    body_string: Option<String>,
-) -> HttpResponse<Full<Bytes>> {
-    let path_parts: Vec<&str> = path.split("/").filter(|s| !s.is_empty()).collect();
-
-    let _body: Option<JsonValue> = if body_string.is_some() {
-        if let Ok(body_json) = json::parse(&body_string.unwrap()) {
-            Some(body_json)
-        } else {
-            None
-        }
+pub async fn handle(req: HttpRequest, body: web::Bytes) -> HttpResponse {
+    // Optional JSON parsing
+    let _body_json: Option<JsonValue> = if !body.is_empty() {
+        json::parse(std::str::from_utf8(&body).unwrap_or("")).ok()
     } else {
         None
     };
 
-    let req_path = path.trim_start_matches('/');
+    let req_path = req.path().trim_start_matches('/');
+
+    // 1️⃣ Resolve the filesystem path
     let mut fs_path = PathBuf::from("web");
 
+    // Boolean P: no path provided → redirect to index.html
     if req_path.is_empty() {
         fs_path.push("index.html");
     } else {
         fs_path.extend(req_path.split('/'));
     }
 
+    // Boolean D: path is directory → serve index.html inside
     if fs_path.is_dir() {
         fs_path.push("index.html");
     }
 
-    let ext = fs_path.extension().and_then(|e| e.to_str()).unwrap_or("");
-
-    let codec = codec_for_ext(ext);
-
-    let dir = fs_path.parent().unwrap_or(Path::new("web"));
-    let name = fs_path
+    // Boolean E: extension provided
+    let ext_opt = fs_path.extension().and_then(|e| e.to_str());
+    let mut final_name = fs_path
         .file_name()
         .and_then(|n| n.to_str())
-        .unwrap_or("index.html");
+        .unwrap_or("")
+        .to_string();
 
-    let content = load_file_vec(dir.to_str().unwrap_or("web"), name);
-    if let Ok(content) = content {
-        HttpResponse::builder()
-            .status(StatusCode::OK)
-            .header("content-type", codec)
-            .body(Full::new(Bytes::from(content)))
-            .unwrap()
-    } else {
-        if matches!(ext, "js" | "css" | "woff2") {
-            return HttpResponse::builder()
-                .status(StatusCode::NOT_FOUND)
-                .header("content-type", "text/plain")
-                .body(Full::new(Bytes::from("Not found")))
-                .unwrap();
-        }
-
-        let fallback = load_file_vec("web", "404.html");
-        let body = if let Ok(fallback) = fallback {
-            if fallback.is_empty() {
-                include_str!("../../static/web/404.html")
-                    .as_bytes()
-                    .to_vec()
-            } else {
-                fallback
-            }
+    if ext_opt.is_none() {
+        // No extension provided → try HTML
+        if final_name.is_empty() {
+            final_name = "index.html".to_string();
         } else {
-            include_str!("../../static/web/404.html")
-                .as_bytes()
-                .to_vec()
-        };
+            final_name.push_str(".html");
+        }
+    }
 
-        HttpResponse::builder()
-            .status(StatusCode::NOT_FOUND)
-            .header("content-type", "text/html; charset=utf-8")
-            .body(Full::new(Bytes::from(body)))
-            .unwrap()
+    let content_type = codec_for_ext(
+        fs_path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("html"),
+    );
+
+    let dir = fs_path.parent().unwrap_or(Path::new("web"));
+
+    // 2️⃣ Try to load the resolved file
+    match load_file_vec(dir.to_str().unwrap_or("web"), &final_name) {
+        Ok(content) => HttpResponse::Ok().content_type(content_type).body(content),
+
+        Err(_) => {
+            // For static assets, return plain 404
+            let ext = fs_path.extension().and_then(|e| e.to_str()).unwrap_or("");
+            if matches!(ext, "js" | "css" | "woff2") {
+                return HttpResponse::NotFound()
+                    .content_type("text/plain")
+                    .body("Not found");
+            }
+
+            // 3️⃣ Try to serve 404.html from web folder
+            let fallback = load_file_vec("web", "404.html")
+                .unwrap_or_else(|_| include_bytes!("../../static/web/404.html").to_vec());
+
+            HttpResponse::NotFound()
+                .content_type("text/html; charset=utf-8")
+                .body(fallback)
+        }
     }
 }

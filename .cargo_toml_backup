@@ -6,10 +6,10 @@ edition = "2024"
 [dependencies]
 actix = "0.13.5"
 actix-rt = "2.11.0"
-actix-web = { version = "4", features = ["rustls-0_23"] }
-actix-web-actors = "4"
-actix-files = "0.6"
+actix-web = { version = "4.12.1", features = ["rustls-0_23"] }
+actix-web-actors = "4.3.1"
 aes-gcm = "*"
+axum = { version = "0.8.8", features = ["ws", "http2"] }
 base64 = "0.22.1"
 bytes = "*"
 cmake = "*"
@@ -72,4 +72,5 @@ ratatui = "0.30.0"
 ratatui_input = "0.1.3"
 open = "5.3.3"
 chrono = "0.4.43"
+axum-server = { version = "0.8.0", features = ["tls-rustls"] }
 serde_json = "1.0.149"

@@ -1,38 +1,32 @@
 use crate::server::server::is_local_network;
 use crate::util::config_util::CONFIG;
-use axum::routing::{get, post};
-use axum::{
-    extract::{ConnectInfo, Json, State},
-    http::{HeaderMap, StatusCode},
-    response::{IntoResponse, Response},
-};
+use actix_web::{HttpRequest, HttpResponse, Responder, web};
 use serde_json::{Value, json};
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-pub fn api_router() -> axum::Router<bool> {
-    axum::Router::new()
-        .route("/shutdown", post(shutdown))
-        .route("/reload", post(reload))
-        .route("/users/add", post(users_add))
-        .route("/users/remove", post(users_remove))
-        .route("/users/get", get(users_get))
-        .route("/communities/add", post(communities_add))
-        .route("/communities/get", get(communities_get))
-        .route("/settings/set", post(settings_set))
-        .route("/settings/get", get(settings_get))
+pub fn api_config(cfg: &mut web::ServiceConfig) {
+    cfg.service(
+        web::scope("/api")
+            .route("/shutdown/", web::post().to(shutdown))
+            .route("/reload/", web::post().to(reload))
+            .route("/users/add/", web::post().to(users_add))
+            .route("/users/remove/", web::post().to(users_remove))
+            .route("/users/get/", web::get().to(users_get))
+            .route("/communities/add/", web::post().to(communities_add))
+            .route("/communities/get/", web::get().to(communities_get))
+            .route("/settings/set/", web::post().to(settings_set))
+            .route("/settings/get/", web::get().to(settings_get)),
+    );
 }
-pub async fn settings_set(
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    State(ssl): State<bool>,
-    headers: HeaderMap,
-) -> Response {
-    if !is_allowed(addr, ssl) {
+
+async fn settings_set(req: HttpRequest, ssl: web::Data<bool>) -> impl Responder {
+    if !is_allowed_req(&req, *ssl.get_ref()) {
         return forbidden();
     }
 
-    let key = headers.get("key").and_then(|v| v.to_str().ok());
-    let value = headers.get("value").and_then(|v| v.to_str().ok());
+    let key = req.headers().get("key").and_then(|v| v.to_str().ok());
+    let value = req.headers().get("value").and_then(|v| v.to_str().ok());
 
     match (key, value) {
         (Some(k), Some(v)) => {
@@ -48,22 +42,17 @@ pub async fn settings_set(
     }
 }
 
-pub async fn settings_get(
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    State(ssl): State<bool>,
-) -> Response {
-    if !is_allowed(addr, ssl) {
+async fn settings_get(req: HttpRequest, ssl: web::Data<bool>) -> impl Responder {
+    if !is_allowed_req(&req, *ssl.get_ref()) {
         return forbidden();
     }
     let config = CONFIG.read().await.config.clone();
     let serde_config: Value = serde_json::to_value(config.to_string()).unwrap();
-    (StatusCode::OK, Json(serde_config)).into_response()
+    HttpResponse::Ok().json(serde_config)
 }
-pub async fn communities_get(
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    State(ssl): State<bool>,
-) -> Response {
-    if !is_allowed(addr, ssl) {
+
+async fn communities_get(req: HttpRequest, ssl: web::Data<bool>) -> impl Responder {
+    if !is_allowed_req(&req, *ssl.get_ref()) {
         return forbidden();
     }
 
@@ -76,14 +65,15 @@ pub async fn communities_get(
         let s_val: Value = serde_json::to_value(val.to_string()).unwrap();
         list.push(s_val);
     }
-    (StatusCode::OK, Json(list)).into_response()
+    HttpResponse::Ok().json(list)
 }
-pub async fn communities_add(
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    State(ssl): State<bool>,
-    Json(payload): Json<Value>,
-) -> Response {
-    if !is_allowed(addr, ssl) {
+
+async fn communities_add(
+    req: HttpRequest,
+    ssl: web::Data<bool>,
+    payload: web::Json<Value>,
+) -> impl Responder {
+    if !is_allowed_req(&req, *ssl.get_ref()) {
         return forbidden();
     }
 
@@ -96,11 +86,9 @@ pub async fn communities_add(
 
     success()
 }
-pub async fn users_get(
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    State(ssl): State<bool>,
-) -> Response {
-    if !is_allowed(addr, ssl) {
+
+async fn users_get(req: HttpRequest, ssl: web::Data<bool>) -> impl Responder {
+    if !is_allowed_req(&req, *ssl.get_ref()) {
         return forbidden();
     }
 
@@ -114,14 +102,15 @@ pub async fn users_get(
         })
         .collect();
 
-    (StatusCode::OK, Json(list)).into_response()
+    HttpResponse::Ok().json(list)
 }
-pub async fn users_remove(
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    State(ssl): State<bool>,
-    Json(payload): Json<Value>,
-) -> Response {
-    if !is_allowed(addr, ssl) {
+
+async fn users_remove(
+    req: HttpRequest,
+    ssl: web::Data<bool>,
+    payload: web::Json<Value>,
+) -> impl Responder {
+    if !is_allowed_req(&req, *ssl.get_ref()) {
         return forbidden();
     }
 
@@ -132,12 +121,13 @@ pub async fn users_remove(
 
     success()
 }
-pub async fn users_add(
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    State(ssl): State<bool>,
-    Json(payload): Json<Value>,
-) -> Response {
-    if !is_allowed(addr, ssl) {
+
+async fn users_add(
+    req: HttpRequest,
+    ssl: web::Data<bool>,
+    payload: web::Json<Value>,
+) -> impl Responder {
+    if !is_allowed_req(&req, *ssl.get_ref()) {
         return forbidden();
     }
 
@@ -149,16 +139,14 @@ pub async fn users_add(
     if let (Some(user), Some(_)) = crate::users::user_manager::create_user(username).await {
         let val = user.frontend();
         let s_val: Value = serde_json::to_value(val.to_string()).unwrap();
-        (StatusCode::OK, Json(s_val)).into_response()
+        HttpResponse::Ok().json(s_val)
     } else {
         error()
     }
 }
-pub async fn shutdown(
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    State(ssl): State<bool>,
-) -> Response {
-    if !is_allowed(addr, ssl) {
+
+async fn shutdown(req: HttpRequest, ssl: web::Data<bool>) -> impl Responder {
+    if !is_allowed_req(&req, *ssl.get_ref()) {
         return forbidden();
     }
 
@@ -166,11 +154,8 @@ pub async fn shutdown(
     success()
 }
 
-pub async fn reload(
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    State(ssl): State<bool>,
-) -> Response {
-    if !is_allowed(addr, ssl) {
+async fn reload(req: HttpRequest, ssl: web::Data<bool>) -> impl Responder {
+    if !is_allowed_req(&req, *ssl.get_ref()) {
         return forbidden();
     }
 
@@ -180,18 +165,26 @@ pub async fn reload(
     success()
 }
 
-fn forbidden() -> Response {
-    (StatusCode::FORBIDDEN, "403 Forbidden").into_response()
+fn forbidden() -> HttpResponse {
+    HttpResponse::Forbidden().body("403 Forbidden")
 }
 
-fn success() -> Response {
-    Json(json!({ "type": "success" })).into_response()
+fn success() -> HttpResponse {
+    HttpResponse::Ok().json(json!({ "type": "success" }))
 }
 
-fn error() -> Response {
-    Json(json!({ "type": "error" })).into_response()
+fn error() -> HttpResponse {
+    HttpResponse::Ok().json(json!({ "type": "error" }))
 }
 
 fn is_allowed(addr: SocketAddr, ssl: bool) -> bool {
     is_local_network(addr.ip()) || ssl
+}
+
+fn is_allowed_req(req: &HttpRequest, ssl: bool) -> bool {
+    if let Some(addr) = req.peer_addr() {
+        is_allowed(addr, ssl)
+    } else {
+        false
+    }
 }

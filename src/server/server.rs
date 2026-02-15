@@ -1,165 +1,98 @@
 use crate::gui::log_panel::log_message;
-use crate::server::api::api_router;
-use crate::server::socket::handle;
-use crate::server::web_path_parser::codec_for_ext;
-use crate::util::file_util::{load_file_buf, load_file_vec};
+use crate::server::api::api_config;
+use crate::server::socket::WsSession;
+use crate::server::web_path_parser;
+use crate::util::file_util::load_file_buf;
 use crate::{ACTIVE_TASKS, SHUTDOWN};
 
-use axum::{
-    Router,
-    extract::{
-        ConnectInfo, Path,
-        ws::{WebSocket, WebSocketUpgrade},
-    },
-    http::{HeaderMap, StatusCode},
-    response::{IntoResponse, Response},
-    routing::{any, get},
-};
-use axum_server::tls_rustls::RustlsConfig;
-use futures_util::StreamExt;
+use actix_web::{App, Error, HttpRequest, HttpServer, Responder, dev::ServerHandle, web};
+use actix_web_actors::ws;
+
 use rustls::ServerConfig;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use std::{
-    error::Error,
+    error::Error as StdError,
     io::{self, BufReader, ErrorKind},
-    net::{IpAddr, SocketAddr},
+    net::IpAddr,
     sync::Arc,
     time::Duration,
 };
-use tokio::net::TcpListener;
-use tower::ServiceBuilder;
 
-fn build_router(ssl: bool) -> Router {
-    Router::new()
-        .route("/ws/{*path}", get(ws_handler))
-        .nest("/api", api_router())
-        .route("/{*path}", any(static_handler))
-        .layer(ServiceBuilder::new())
-        .with_state(ssl)
-}
-
-async fn ws_handler(
-    ws: WebSocketUpgrade,
-    Path(path): Path<String>,
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
-) -> impl IntoResponse {
-    log_message(format!("WS connection from {}", addr));
-
-    ws.on_upgrade(move |socket| async move {
-        handle_ws(socket, path).await;
-    })
-}
-
-async fn handle_ws(socket: WebSocket, path: String) {
-    let (sender, receiver) = socket.split();
-    handle(path, sender, receiver);
-}
-
-async fn static_handler(Path(path): Path<String>) -> Response {
-    let mut parts: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
-    let name = if parts.is_empty() {
-        "index.html"
-    } else {
-        let last_part = parts.last().unwrap();
-        if last_part.contains('.') {
-            parts.pop().unwrap()
-        } else {
-            "index.html"
-        }
-    };
-
-    let path_prefix = parts.join("/");
-    let content_result = load_file_vec(&format!("web/{}/", path_prefix), name);
-
-    match content_result {
-        Ok(content) => {
-            let mime = codec_for_ext(name);
-            let mut headers = HeaderMap::new();
-            headers.insert(axum::http::header::CONTENT_TYPE, mime.parse().unwrap());
-            (StatusCode::OK, headers, content).into_response()
-        }
-        Err(_) => {
-            let content_404 = load_file_vec("web", "404.html").unwrap_or_default();
-            let mut headers = HeaderMap::new();
-            headers.insert(
-                axum::http::header::CONTENT_TYPE,
-                "text/html; charset=utf-8".parse().unwrap(),
-            );
-            (StatusCode::NOT_FOUND, headers, content_404).into_response()
-        }
-    }
+async fn ws_handler(req: HttpRequest, stream: web::Payload) -> Result<impl Responder, Error> {
+    let path = req.path().to_string();
+    log_message(format!("WS connection from {:?}", req.peer_addr()));
+    let session = WsSession::new(path);
+    ws::start(session, &req, stream)
 }
 
 pub async fn start(port: u16) -> bool {
-    match load_tls_config() {
-        Ok(Some(tls)) => run_tls_server(port, tls).await,
-        Ok(_) => run_http_server(port).await,
-        Err(e) => {
-            log_message(format!("TLS config error: {}", e));
-            false
-        }
-    }
-}
+    let (tx, rx) = std::sync::mpsc::channel();
 
-async fn run_http_server(port: u16) -> bool {
-    let addr = SocketAddr::from(([0, 0, 0, 0], port));
-    let router = build_router(false);
+    let server_task = tokio::spawn(async move {
+        let server = match load_tls_config() {
+            Ok(Some(tls_config)) => {
+                log_message(format!("HTTPS (HTTP/2) Server running on 0.0.0.0:{}", port));
+                let _config = (*tls_config).clone();
+                HttpServer::new(move || {
+                    App::new()
+                        .app_data(web::Data::new(true))
+                        .configure(api_config)
+                        .service(web::resource("/ws/{path:.*}").route(web::get().to(ws_handler)))
+                        .default_service(web::to(web_path_parser::handle))
+                })
+                .bind(("0.0.0.0", port))
+                .unwrap()
+                .run()
+            }
+            Ok(None) => {
+                log_message(format!("HTTP Server running on 0.0.0.0:{}", port));
+                HttpServer::new(move || {
+                    App::new()
+                        .app_data(web::Data::new(false))
+                        .configure(api_config)
+                        .service(web::resource("/ws/{path:.*}").route(web::get().to(ws_handler)))
+                        .default_service(web::to(web_path_parser::handle))
+                })
+                .bind(("0.0.0.0", port))
+                .unwrap()
+                .run()
+            }
+            Err(e) => {
+                log_message(format!("TLS config error: {}", e));
+                return;
+            }
+        };
 
-    log_message(format!("HTTP Server running on {}", addr));
+        let server_handle = server.handle();
+        tx.send(server_handle).unwrap();
 
-    ACTIVE_TASKS.lock().unwrap().push("WebServer".into());
-
-    tokio::spawn(async move {
-        let listener = TcpListener::bind(addr).await.unwrap();
-
-        axum::serve(
-            listener,
-            router.into_make_service_with_connect_info::<SocketAddr>(),
-        )
-        .with_graceful_shutdown(wait_for_shutdown())
-        .await
-        .unwrap();
-
+        ACTIVE_TASKS.lock().unwrap().push("WebServer".into());
+        server.await.unwrap();
         ACTIVE_TASKS.lock().unwrap().retain(|t| t != "WebServer");
-        log_message("HTTP Server shutdown complete.");
+        log_message("Web Server shutdown complete.");
     });
 
-    true
-}
-
-async fn run_tls_server(port: u16, tls: Arc<ServerConfig>) -> bool {
-    let addr = SocketAddr::from(([0, 0, 0, 0], port));
-    let router = build_router(true);
-
-    let tls_config = RustlsConfig::from_config(tls);
-
-    log_message(format!("HTTPS (HTTP/2) Server running on {}", addr));
-
-    ACTIVE_TASKS.lock().unwrap().push("WebServer".into());
+    let server_handle = rx.recv().unwrap();
 
     tokio::spawn(async move {
-        axum_server::bind_rustls(addr, tls_config)
-            .serve(router.into_make_service_with_connect_info::<SocketAddr>())
-            .await
-            .unwrap();
-
-        ACTIVE_TASKS.lock().unwrap().retain(|t| t != "WebServer");
-        log_message("HTTPS Server shutdown complete.");
+        wait_for_shutdown(server_handle).await;
     });
 
-    true
+    server_task.await.is_ok()
 }
 
-async fn wait_for_shutdown() {
+async fn wait_for_shutdown(server_handle: ServerHandle) {
     loop {
         if *SHUTDOWN.read().await {
             log_message("Shutdown signal received.");
+            server_handle.stop(true).await;
             break;
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
 }
-fn load_tls_config() -> Result<Option<Arc<ServerConfig>>, Box<dyn Error>> {
+
+fn load_tls_config() -> Result<Option<Arc<ServerConfig>>, Box<dyn StdError>> {
     let cert_file_res = load_file_buf("certs", "cert.pem");
     let key_file_res = load_file_buf("certs", "cert.key");
 
@@ -181,22 +114,21 @@ fn load_tls_config() -> Result<Option<Arc<ServerConfig>>, Box<dyn Error>> {
         Err(e) => return Err(e.into()), // Other IO error
     };
 
-    let mut cert_reader = BufReader::new(cert_file_buf);
-    let cert_ders = rustls_pemfile::certs(&mut cert_reader)
-        .collect::<Result<Vec<CertificateDer>, io::Error>>()?;
+    let cert_chain = rustls_pemfile::certs(&mut BufReader::new(cert_file_buf))
+        .collect::<Result<Vec<CertificateDer>, _>>()?;
 
     // PKCS8
     let mut key_reader = BufReader::new(key_file_buf);
     let mut key_ders = rustls_pemfile::pkcs8_private_keys(&mut key_reader)
-        .map(|r| r.map(Into::into)) // Explicit conversion
-        .collect::<Result<Vec<PrivateKeyDer>, io::Error>>()?;
+        .map(|r| r.map(Into::into))
+        .collect::<Result<Vec<PrivateKeyDer>, _>>()?;
 
     if key_ders.is_empty() {
         // RSA
         key_reader = BufReader::new(load_file_buf("certs", "cert.key")?); // Re-read key file
         key_ders = rustls_pemfile::rsa_private_keys(&mut key_reader)
             .map(|r| r.map(Into::into))
-            .collect::<Result<Vec<PrivateKeyDer>, io::Error>>()?;
+            .collect::<Result<Vec<PrivateKeyDer>, _>>()?;
     }
 
     if key_ders.is_empty() {
@@ -204,20 +136,21 @@ fn load_tls_config() -> Result<Option<Arc<ServerConfig>>, Box<dyn Error>> {
         key_reader = BufReader::new(load_file_buf("certs", "cert.key")?); // Re-read key file
         key_ders = rustls_pemfile::ec_private_keys(&mut key_reader)
             .map(|r| r.map(Into::into))
-            .collect::<Result<Vec<PrivateKeyDer>, io::Error>>()?;
+            .collect::<Result<Vec<PrivateKeyDer>, _>>()?;
     }
 
     if key_ders.is_empty() {
         return Err("No private keys found in key file. (Tried PKCS8, RSA, and EC)".into());
     }
 
-    let config = rustls::ServerConfig::builder()
+    let config = ServerConfig::builder()
         .with_no_client_auth()
-        .with_single_cert(cert_ders, key_ders.remove(0))
+        .with_single_cert(cert_chain, key_ders.remove(0))
         .map_err(|e| io::Error::new(ErrorKind::Other, e.to_string()))?;
 
     Ok(Some(Arc::new(config)))
 }
+
 pub fn is_local_network(addr: IpAddr) -> bool {
     match addr {
         IpAddr::V4(v4) => {
