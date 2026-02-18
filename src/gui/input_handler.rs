@@ -1,5 +1,5 @@
 use crate::ACTIVE_TASKS;
-use crate::gui::ui::UI;
+use crate::gui::ui::{UI, UNIQUE};
 use crate::{RELOAD, SHUTDOWN};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, poll, read};
 use std::sync::Arc;
@@ -31,8 +31,9 @@ pub fn setup_input_handler(ui: Arc<UI>) {
                     Ok(event) => {
                         if let Event::Key(key_event) = event {
                             if key_event.kind == KeyEventKind::Press {
-                                let ui_clone = ui.clone();
-                                handle_input(key_event, ui_clone).await;
+                                let uic = ui.clone();
+                                handle_input(key_event, uic).await;
+                                *UNIQUE.write().await = true;
                             }
                         }
                     }

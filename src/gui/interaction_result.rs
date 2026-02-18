@@ -1,9 +1,10 @@
-use std::fmt::Debug;
+use std::fmt::{Debug, Formatter};
 use std::future::Future;
 use std::pin::Pin;
 
 use crate::gui::screens::screens::Screen;
 
+#[allow(unused)]
 pub enum InteractionResult {
     CloseScreen,
     OpenScreen {
@@ -17,7 +18,7 @@ pub enum InteractionResult {
 }
 
 impl Debug for InteractionResult {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             InteractionResult::OpenScreen { screen: _ } => write!(f, "OpenScreen"),
             InteractionResult::OpenFutureScreen { screen: _ } => write!(f, "OpenFutureScreen"),

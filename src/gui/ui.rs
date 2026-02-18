@@ -1,15 +1,47 @@
-use crate::gui::{interaction_result::InteractionResult, screens::screens::Screen};
+use crate::{
+    SHUTDOWN,
+    gui::{
+        input_handler::setup_input_handler, interaction_result::InteractionResult,
+        screens::screens::Screen,
+    },
+};
 use crossterm::event::KeyEvent;
+use once_cell::sync::Lazy;
 use ratatui::{Terminal, backend::CrosstermBackend, init};
-use std::sync::{Arc, Mutex};
+use std::{
+    io::Stdout,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 use tokio::sync::RwLock;
 
 /// UI state and rendering
+pub static UNIQUE: Lazy<RwLock<bool>> = Lazy::new(|| RwLock::new(true));
 pub struct UI {
-    pub terminal: Arc<Mutex<Terminal<CrosstermBackend<std::io::Stdout>>>>,
+    pub terminal: Arc<Mutex<Terminal<CrosstermBackend<Stdout>>>>,
     screen: Arc<RwLock<Option<Box<dyn Screen>>>>,
 }
 
+pub fn start_tui() -> Arc<UI> {
+    let ui = Arc::new(UI::new());
+    let uic = ui.clone();
+    tokio::spawn(async move {
+        loop {
+            if *SHUTDOWN.read().await {
+                break;
+            }
+
+            if *UNIQUE.read().await {
+                uic.render().await;
+            } else {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        }
+        ratatui::restore();
+    });
+    setup_input_handler(ui.clone());
+    ui
+}
 impl UI {
     pub fn new() -> Self {
         let terminal = init();
@@ -42,9 +74,7 @@ impl UI {
                 ui.set_screen(screen).await;
             }
             InteractionResult::CloseScreen => {
-                /* TODO
-                self.set_screen();
-                */
+                *self.screen.write().await = None;
             }
             InteractionResult::Handled => {}
             InteractionResult::Unhandled => {}

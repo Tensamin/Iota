@@ -20,8 +20,8 @@ mod util;
 use crate::communities::community_manager;
 use crate::communities::interactables::registry;
 use crate::gui::app_state::AppState;
-use crate::gui::input_handler::setup_input_handler;
-use crate::gui::ui::UI;
+use crate::gui::screens::main_screen::MainScreen;
+use crate::gui::ui::start_tui;
 use crate::langu::language_creator;
 use crate::omikron::omikron_connection::{OMIKRON_CONNECTION, OmikronConnection};
 use crate::server::server::start;
@@ -46,8 +46,7 @@ async fn main() {
         *RELOAD.write().await = false;
         *SHUTDOWN.write().await = false;
 
-        let ui = Arc::new(UI::new());
-        setup_input_handler(ui.clone());
+        let ui = start_tui();
 
         let ui_clone = ui.clone();
         tokio::spawn(async move {
@@ -60,15 +59,25 @@ async fn main() {
         let (eula, tos_pp) = ConsentManager::check(ui.clone()).await;
 
         if !eula {
-            ui.terminal.lock().unwrap().clear();
-            ui.terminal.lock().unwrap().flush();
+            *SHUTDOWN.write().await = true;
+            loop {
+                if ACTIVE_TASKS.lock().unwrap().is_empty() {
+                    break;
+                }
+                sleep(Duration::from_secs(1)).await;
+            }
             println!("You need to accept our End User Licence Agreement before launching!");
             println!("You can find this at 'agreements'!");
             return;
         }
         if !tos_pp {
-            ui.terminal.lock().unwrap().clear();
-            ui.terminal.lock().unwrap().flush();
+            *SHUTDOWN.write().await = true;
+            loop {
+                if ACTIVE_TASKS.lock().unwrap().is_empty() {
+                    break;
+                }
+                sleep(Duration::from_secs(1)).await;
+            }
             println!(
                 "Please accept our Privacy Policy & Terms of Serivce before using Tensamin Services!"
             );
@@ -76,6 +85,9 @@ async fn main() {
             println!("You can find this at 'agreements'!");
             return;
         }
+
+        let main_screen = MainScreen::new(ui.clone()).await;
+        ui.set_screen(Box::new(main_screen)).await;
 
         // LANGUAGE PACK
         if let Err(e) = language_creator::create_languages() {

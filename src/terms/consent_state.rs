@@ -17,125 +17,99 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub struct ConsentManager;
 impl ConsentManager {
     pub async fn check(ui: Arc<UI>) -> (bool, bool) {
-        let (tx, rx) = oneshot::channel();
-
         let file = load_file("", "agreements");
-        let mut file_state = ConsentState::from_str(&file).sanitize();
-        ui.set_screen(Box::new(TermsCheckerScreen::new(ui.clone(), Some(tx))))
-            .await;
+        let mut state = ConsentState::from_str(&file).sanitize();
 
-        let result = rx.await.unwrap_or(UserChoice::Deny);
+        if !state.accepted_eula {
+            let (tx, rx) = oneshot::channel();
 
-        match result {
-            UserChoice::AcceptEULA | UserChoice::AcceptAll => {
-                if let Some((current_eula, current_tos, current_privacy)) = get_current_docs().await
-                {
-                    file_state.accepted_eula = true;
-                    file_state.eula = Some(current_eula);
+            ui.set_screen(Box::new(TermsCheckerScreen::new(ui.clone(), Some(tx))))
+                .await;
 
-                    if matches!(result, UserChoice::AcceptAll) {
-                        file_state.accepted_tos = true;
-                        file_state.accepted_pp = true;
-                        file_state.tos = Some(current_tos);
-                        file_state.privacy = Some(current_privacy);
+            let result = rx.await.unwrap_or(UserChoice::Deny);
+
+            match result {
+                UserChoice::AcceptEULA | UserChoice::AcceptAll => {
+                    if let Some((current_eula, current_tos, current_privacy)) =
+                        get_current_docs().await
+                    {
+                        state.accepted_eula = true;
+                        state.eula = Some(current_eula);
+
+                        if matches!(result, UserChoice::AcceptAll) {
+                            state.accepted_tos = true;
+                            state.accepted_pp = true;
+                            state.tos = Some(current_tos);
+                            state.privacy = Some(current_privacy);
+                        }
                     }
                 }
+                UserChoice::Deny => return (false, false),
             }
-            UserChoice::Deny => {
-                return (false, false);
-            }
+
+            save_file("", "agreements", &state.to_string());
         }
 
-        save_file("", "agreements", &file_state.to_string());
-
         if let Some((eula_update, tos_update, privacy_update)) = Self::get_updates().await {
-            let _is_forced = matches!(eula_update, UpdateDecision::Forced(_))
+            let is_forced = matches!(eula_update, UpdateDecision::Forced(_))
                 || matches!(tos_update, UpdateDecision::Forced(_))
                 || matches!(privacy_update, UpdateDecision::Forced(_));
 
-            if let Some((eula_update, tos_update, privacy_update)) = Self::get_updates().await {
-                let is_forced = matches!(eula_update, UpdateDecision::Forced(_))
-                    || matches!(tos_update, UpdateDecision::Forced(_))
-                    || matches!(privacy_update, UpdateDecision::Forced(_));
+            let (tx, rx) = oneshot::channel();
 
-                let (tx, rx) = oneshot::channel();
+            ui.set_screen(Box::new(TermsUpdaterScreen::new(
+                ui.clone(),
+                eula_update.clone(),
+                tos_update.clone(),
+                privacy_update.clone(),
+                Some(tx),
+            )))
+            .await;
 
-                ui.set_screen(Box::new(TermsUpdaterScreen::new(
-                    ui.clone(),
-                    eula_update.clone(),
-                    tos_update.clone(),
-                    privacy_update.clone(),
-                    Some(tx),
-                )))
-                .await;
+            let result = rx.await.unwrap_or(UserChoice::Deny);
 
-                if is_forced {
-                    let result = rx.await.unwrap_or(UserChoice::Deny);
-
-                    let file = load_file("", "agreements");
-                    let mut state = ConsentState::from_str(&file).sanitize();
-
-                    match result {
-                        UserChoice::AcceptAll => {
-                            state.accepted_eula = true;
-                            state.accepted_tos = true;
-                            state.accepted_pp = true;
+            if is_forced {
+                match result {
+                    UserChoice::AcceptAll => {
+                        state.accepted_eula = true;
+                        state.accepted_tos = true;
+                        state.accepted_pp = true;
+                    }
+                    UserChoice::AcceptEULA => {
+                        state.accepted_eula = true;
+                    }
+                    UserChoice::Deny => return (false, false),
+                }
+            } else {
+                match result {
+                    UserChoice::AcceptAll => {
+                        if let UpdateDecision::Future { newest } = eula_update {
+                            state.future_eula = Some(newest);
                         }
-                        UserChoice::AcceptEULA => {
-                            state.accepted_eula = true;
+                        if let UpdateDecision::Future { newest } = tos_update {
+                            state.future_tos = Some(newest);
                         }
-                        UserChoice::Deny => {
-                            return (false, false);
+                        if let UpdateDecision::Future { newest } = privacy_update {
+                            state.future_privacy = Some(newest);
                         }
                     }
-
-                    let state = state.sanitize();
-                    save_file("", "agreements", &state.to_string());
-                } else {
-                    tokio::spawn(async move {
-                        let result = rx.await.unwrap_or(UserChoice::Deny);
-
-                        let file = load_file("", "agreements");
-                        let mut state = ConsentState::from_str(&file).sanitize();
-
-                        match result {
-                            UserChoice::AcceptAll => {
-                                state.future_eula = match eula_update {
-                                    UpdateDecision::Future { newest } => Some(newest),
-                                    _ => state.future_eula,
-                                };
-                                state.future_tos = match tos_update {
-                                    UpdateDecision::Future { newest } => Some(newest),
-                                    _ => state.future_tos,
-                                };
-                                state.future_privacy = match privacy_update {
-                                    UpdateDecision::Future { newest } => Some(newest),
-                                    _ => state.future_privacy,
-                                };
-                            }
-                            UserChoice::AcceptEULA => {
-                                if let UpdateDecision::Future { newest } = eula_update {
-                                    state.future_eula = Some(newest);
-                                }
-                            }
-                            UserChoice::Deny => {}
+                    UserChoice::AcceptEULA => {
+                        if let UpdateDecision::Future { newest } = eula_update {
+                            state.future_eula = Some(newest);
                         }
-
-                        let state = state.sanitize();
-                        save_file("", "agreements", &state.to_string());
-                    });
+                    }
+                    UserChoice::Deny => {}
                 }
             }
+
+            state = state.sanitize();
+            save_file("", "agreements", &state.to_string());
         }
 
-        let file = load_file("", "agreements");
-        let final_state = ConsentState::from_str(&file).sanitize();
+        state = ConsentState::from_str(&load_file("", "agreements")).sanitize();
+        save_file("", "agreements", &state.to_string());
 
-        save_file("", "agreements", &final_state.to_string());
-        (
-            final_state.accepted_eula,
-            final_state.accepted_tos && final_state.accepted_pp,
-        )
+        (state.accepted_eula, state.accepted_tos && state.accepted_pp)
     }
 
     async fn get_updates() -> Option<(
