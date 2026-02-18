@@ -1,0 +1,15 @@
+1771421600740  IOTA ID:  0
+1771421600740  User IDS: 
+1771421600755  Community IDS: 
+1771421600756  TLS certificate 'certs/cert.pem' not found.
+1771421600756  HTTP Server running on 0.0.0.0:1984
+1771421600756  Communities active on ws://10.209.226.34:1984/community/...
+1771421600756  Downloading ZIP file...
+1771421600982  Failed to download file: Status 404 Not Found
+1771421600982  Error downloading file: Failed to download file: Status 404 Not Found
+1771421600983  IOTA_REGISTER_NEW
+1771421600988  OMIKRON_CONNECTING
+1771421601270  OMIKRON_CONNECTION_SUCCESS
+1771421606464  Shutdown signal received.
+1771421621272  Request timed out after 20 seconds.
+1771421621272  Launched

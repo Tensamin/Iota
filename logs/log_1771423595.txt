@@ -1,0 +1,11 @@
+1771423595203  IOTA ID:  0
+1771423595203  User IDS: 
+1771423595215  Community IDS: 
+1771423595216  TLS certificate 'certs/cert.pem' not found.
+1771423595216  HTTP Server running on 0.0.0.0:1984
+1771423595217  Communities active on ws://10.209.226.34:1984/community/...
+1771423595217  Downloading ZIP file...
+1771423608345  Shutdown signal received.
+1771423608346  Web Server shutdown complete.
+1771423685485  Failed to download file: Status 504 Gateway Timeout
+1771423685485  Error downloading file: Failed to download file: Status 504 Gateway Timeout

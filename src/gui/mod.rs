@@ -4,7 +4,10 @@ pub mod elements {
 }
 pub mod screens {
     pub mod screens;
+    pub mod terms_checker;
+    pub mod terms_updater;
 }
 pub mod app_state;
+pub mod input_handler;
 pub mod interaction_result;
 pub mod ui;

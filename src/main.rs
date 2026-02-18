@@ -20,11 +20,12 @@ mod util;
 use crate::communities::community_manager;
 use crate::communities::interactables::registry;
 use crate::gui::app_state::AppState;
-use crate::gui::ui;
+use crate::gui::input_handler::setup_input_handler;
+use crate::gui::ui::UI;
 use crate::langu::language_creator;
 use crate::omikron::omikron_connection::{OMIKRON_CONNECTION, OmikronConnection};
 use crate::server::server::start;
-use crate::terms::consent_state;
+use crate::terms::consent_state::ConsentManager;
 use crate::users::user_manager;
 use crate::util::config_util::CONFIG;
 use crate::util::file_util::download_and_extract_zip;
@@ -45,17 +46,29 @@ async fn main() {
         *RELOAD.write().await = false;
         *SHUTDOWN.write().await = false;
 
-        let tui = ui::UI::new(100, 100);
-        tokio::spawn(async move { tui.render() });
+        let ui = Arc::new(UI::new());
+        setup_input_handler(ui.clone());
 
-        // EULA
-        let (tos, pp) = consent_state::ConsentManager::check().await;
-        if !tos {
+        let ui_clone = ui.clone();
+        tokio::spawn(async move {
+            loop {
+                ui_clone.render().await;
+                sleep(Duration::from_millis(16)).await;
+            }
+        });
+
+        let (eula, tos_pp) = ConsentManager::check(ui.clone()).await;
+
+        if !eula {
+            ui.terminal.lock().unwrap().clear();
+            ui.terminal.lock().unwrap().flush();
             println!("You need to accept our End User Licence Agreement before launching!");
             println!("You can find this at 'agreements'!");
             return;
         }
-        if !pp {
+        if !tos_pp {
+            ui.terminal.lock().unwrap().clear();
+            ui.terminal.lock().unwrap().flush();
             println!(
                 "Please accept our Privacy Policy & Terms of Serivce before using Tensamin Services!"
             );
@@ -171,5 +184,7 @@ async fn main() {
             community_manager::clear();
             *APP_STATE.lock().unwrap() = AppState::new();
         }
+        ui.terminal.lock().unwrap().clear();
+        ui.terminal.lock().unwrap().flush();
     }
 }

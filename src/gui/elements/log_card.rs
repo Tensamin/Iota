@@ -10,7 +10,6 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Wrap},
 };
 use std::any::Any;
-use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct UiLogEntry {
@@ -89,13 +88,13 @@ impl InteractableElement for LogCard {
                 if self.scroll > 0 {
                     self.scroll -= 1;
                 }
-                InteractionResult::Handeled
+                InteractionResult::Handled
             }
             KeyCode::Down => {
                 self.scroll += 1;
-                InteractionResult::Handeled
+                InteractionResult::Handled
             }
-            _ => InteractionResult::Unhandeled,
+            _ => InteractionResult::Unhandled,
         }
     }
 

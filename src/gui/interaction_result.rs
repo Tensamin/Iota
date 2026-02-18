@@ -5,14 +5,15 @@ use std::pin::Pin;
 use crate::gui::screens::screens::Screen;
 
 pub enum InteractionResult {
+    CloseScreen,
     OpenScreen {
         screen: Box<dyn Screen>,
     },
     OpenFutureScreen {
         screen: Pin<Box<dyn Future<Output = Box<dyn Screen>> + Send>>,
     },
-    Handeled,
-    Unhandeled,
+    Handled,
+    Unhandled,
 }
 
 impl Debug for InteractionResult {
@@ -20,8 +21,9 @@ impl Debug for InteractionResult {
         match self {
             InteractionResult::OpenScreen { screen: _ } => write!(f, "OpenScreen"),
             InteractionResult::OpenFutureScreen { screen: _ } => write!(f, "OpenFutureScreen"),
-            InteractionResult::Handeled => write!(f, "Handeled"),
-            InteractionResult::Unhandeled => write!(f, "Unhandeled"),
+            InteractionResult::CloseScreen => write!(f, "CloseScreen"),
+            InteractionResult::Handled => write!(f, "Handled"),
+            InteractionResult::Unhandled => write!(f, "Unhandled"),
         }
     }
 }

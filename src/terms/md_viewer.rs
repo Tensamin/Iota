@@ -1,23 +1,62 @@
-use crossterm::event::{self, Event, KeyCode};
+use crossterm::event::{self, Event, KeyCode, KeyEvent};
 use ratatui::{
     DefaultTerminal,
     prelude::*,
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Wrap},
 };
-use std::time::Duration;
+use std::{any::Any, sync::Arc, time::Duration};
 
-#[derive(Default)]
+use crate::gui::{interaction_result::InteractionResult, screens::screens::Screen, ui::UI};
+
 pub struct FileViewer {
+    ui: Arc<UI>,
     title: String,
     text: Vec<DisplayLine>,
     scroll: u16,
     scroll_x: u16,
 }
 
+impl Screen for FileViewer {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+
+    fn get_ui(&self) -> &Arc<UI> {
+        &self.ui
+    }
+
+    fn render(&self, f: &mut Frame, rect: Rect) {
+        self.draw(f, rect);
+    }
+
+    fn handle_input(&mut self, event: KeyEvent) -> InteractionResult {
+        match event.code {
+            KeyCode::Char('q') | KeyCode::Esc => {
+                return InteractionResult::CloseScreen;
+            }
+
+            KeyCode::Down => self.scroll = self.scroll.saturating_add(1),
+            KeyCode::Up => self.scroll = self.scroll.saturating_sub(1),
+            KeyCode::PageDown => self.scroll = self.scroll.saturating_add(10),
+            KeyCode::PageUp => self.scroll = self.scroll.saturating_sub(10),
+            KeyCode::Right => self.scroll_x = self.scroll_x.saturating_add(2),
+            KeyCode::Left => self.scroll_x = self.scroll_x.saturating_sub(2),
+
+            _ => {}
+        }
+
+        InteractionResult::Unhandled
+    }
+}
+
 impl FileViewer {
-    pub fn new(title: String, content: &str) -> Self {
+    pub fn new(ui: Arc<UI>, title: String, content: &str) -> Self {
         Self {
+            ui,
             title,
             text: parse_document(content.to_owned()),
             scroll: 0,
