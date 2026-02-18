@@ -1,15 +1,14 @@
-use crate::gui::log_panel::{log_cv, log_message_format};
 use crate::users::contact::Contact;
 use crate::users::user_community_util::UserCommunityUtil;
 use crate::util::chat_files::{MessageState, change_message_state};
 use crate::util::chats_util::{get_user, mod_user};
 use crate::util::crypto_util::{DataFormat, SecurePayload};
 use crate::util::file_util::{get_children, load_file, save_file};
+use crate::util::logger::PrintType;
 use crate::util::{chat_files, chats_util};
-use crate::{ACTIVE_TASKS, SHUTDOWN};
+use crate::{ACTIVE_TASKS, SHUTDOWN, log, log_cv, log_t};
 use crate::{
     data::communication::{CommunicationType, CommunicationValue, DataTypes},
-    gui::log_panel::{log_message, log_message_trans},
     util::{config_util::CONFIG, crypto_helper},
 };
 use dashmap::DashMap;
@@ -26,6 +25,7 @@ use tokio::time::{Duration, Instant, sleep};
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 use tungstenite::Utf8Bytes;
 use uuid::Uuid;
+use warp::filters::log::log;
 
 pub static OMIKRON_CONNECTION: LazyLock<Arc<RwLock<Option<Arc<OmikronConnection>>>>> =
     LazyLock::new(|| Arc::new(RwLock::new(None)));
@@ -66,7 +66,7 @@ impl OmikronConnection {
         drop(conf);
 
         if iota_id == 0 || public_key.is_none() || private_key.is_none() {
-            log_message_trans("iota_register_new");
+            log_t!("iota_register_new");
             let key_pair = crypto_helper::generate_keypair();
             let public_key_base64 = crypto_helper::public_key_to_base64(&key_pair.public);
             let private_key_base64 = crypto_helper::secret_key_to_base64(&key_pair.secret);
@@ -97,10 +97,10 @@ impl OmikronConnection {
                         conf_write.change("iota_id", iota_json.clone());
                         conf_write.update();
                         drop(conf_write);
-                        log_message(format!("Registered with Iota-ID: {}", iota_id));
+                        log!("Registered with Iota-ID: {}", iota_id);
                     }
                     Err(timeout) => {
-                        log_message(timeout);
+                        log!("{}", timeout);
                     }
                 }
             }
@@ -121,7 +121,7 @@ impl OmikronConnection {
         if self.is_connected().await {
             return true;
         }
-        log_message_trans("omikron_connecting");
+        log_t!("omikron_connecting");
 
         let conf = CONFIG.read().await;
         let addr = conf
@@ -130,11 +130,11 @@ impl OmikronConnection {
             .unwrap_or("wss://app.tensamin.net/ws/iota/");
         let stream_res = connect_async(addr).await;
         if let Err(e) = stream_res {
-            log_message(format!("con error {}", e.to_string()));
+            log!("con error {}", e.to_string());
             return false;
         }
         let (stream, _) = stream_res.unwrap();
-        log_message_trans("omikron_connection_success");
+        log_t!("omikron_connection_success");
 
         let (write_half, read_half) = stream.split();
 
@@ -196,7 +196,7 @@ impl OmikronConnection {
                 );
             }
             *is_connected_out.lock().await = false;
-            log_message("Connection closed.");
+            log!("Connection closed.");
         });
         {
             ACTIVE_TASKS
@@ -219,7 +219,7 @@ impl OmikronConnection {
         tokio::spawn(async move {
             match msg {
                 Ok(Message::Close(Some(frame))) => {
-                    log_message(format!("[Omikron] Closed: {:?}", frame));
+                    log!("[Omikron] Closed: {:?}", frame);
                     *is_connected.lock().await = false;
                     return;
                 }
@@ -271,7 +271,7 @@ impl OmikronConnection {
 
                             self.send_message(&response).await;
                         } else {
-                            log_message("Failed to decrypt challenge");
+                            log!("Failed to decrypt challenge");
                         }
 
                         return;
@@ -286,9 +286,8 @@ impl OmikronConnection {
                             let mut conf = CONFIG.write().await;
                             conf.change("iota_id", JsonValue::Number(iota_id.into()));
                             conf.update();
-                            log_message(format!("Iota registered with ID: {}", iota_id));
+                            log!("Iota registered with ID: {}", iota_id);
 
-                            // Now, proceed to login
                             let login_message =
                                 CommunicationValue::new(CommunicationType::identification)
                                     .add_data(
@@ -301,13 +300,13 @@ impl OmikronConnection {
                                 self_clone.send_message(&login_message).await;
                             });
                         } else {
-                            log_message("Iota registration failed.");
+                            log("Iota registration failed.");
                         }
                         return;
                     }
                     if cv.is_type(CommunicationType::identification_response) {
                         if let Some(accepted) = cv.get_data(DataTypes::accepted) {
-                            log_message(format!("Omikron connected: {}", accepted.to_string()));
+                            log!("Omikron connected: {}", accepted.to_string());
                         }
                         return;
                     }
@@ -315,7 +314,7 @@ impl OmikronConnection {
                     // ************************************************ //
                     // Direct messages                                  //
                     // ************************************************ //
-                    log_cv(&cv);
+                    log_cv!(PrintType::General, &cv);
                     if let Some((_, y)) = waiting.remove(&cv.get_id()) {
                         y(cv);
                         return;
@@ -699,7 +698,7 @@ impl OmikronConnection {
                     }
                 }
                 Err(e) => {
-                    log_message(format!("[Omikron] Error: {}", e));
+                    log!("Omikron] Error: {}", e);
                     *is_connected.lock().await = false;
                     return;
                 }
@@ -721,17 +720,17 @@ impl OmikronConnection {
                 Ok(_) => match writer.flush().await {
                     Ok(_) => return,
                     Err(e) => {
-                        log_message_format("send_message_failed", &[&e.to_string()]);
+                        log_t!("send_message_failed", e.to_string());
                         *connected.lock().await = false;
                     }
                 },
                 Err(e) => {
-                    log_message_format("send_message_failed", &[&e.to_string()]);
+                    log_t!("send_message_failed", e.to_string());
                     *connected.lock().await = false;
                 }
             }
         } else {
-            log_message_format("send_message_failed", &["Immutable Writer"]);
+            log_t!("send_message_failed", "Immutable Writer".to_string());
             *connected.lock().await = false;
         }
     }
@@ -750,7 +749,7 @@ impl OmikronConnection {
                 let inner_tx = task_tx.clone();
                 tokio::spawn(async move {
                     if let Err(e) = inner_tx.send(response_cv).await {
-                        log_message(format!("Failed to send response back to awaiter: {}", &e));
+                        log_t!("Failed to send response back to awaiter: {}", e.to_string());
                     }
                 });
             }),

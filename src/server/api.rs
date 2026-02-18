@@ -133,7 +133,7 @@ async fn users_add(
 
     let username = match payload.get("username").and_then(|v| v.as_str()) {
         Some(u) => u,
-        None => return error(),
+        _ => return error(),
     };
 
     if let (Some(user), Some(_)) = crate::users::user_manager::create_user(username).await {

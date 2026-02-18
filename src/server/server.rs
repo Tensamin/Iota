@@ -1,13 +1,11 @@
-use crate::gui::log_panel::log_message;
+use crate::log;
 use crate::server::api::api_config;
 use crate::server::socket::WsSession;
 use crate::server::web_path_parser;
 use crate::util::file_util::load_file_buf;
 use crate::{ACTIVE_TASKS, SHUTDOWN};
-
 use actix_web::{App, Error, HttpRequest, HttpServer, Responder, dev::ServerHandle, web};
 use actix_web_actors::ws;
-
 use rustls::ServerConfig;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use std::{
@@ -20,7 +18,7 @@ use std::{
 
 async fn ws_handler(req: HttpRequest, stream: web::Payload) -> Result<impl Responder, Error> {
     let path = req.path().to_string();
-    log_message(format!("WS connection from {:?}", req.peer_addr()));
+    log!("WS connection from {:?}", req.peer_addr());
     let session = WsSession::new(path);
     ws::start(session, &req, stream)
 }
@@ -33,7 +31,7 @@ pub async fn start(port: u16) -> bool {
     let _ = tokio::spawn(async move {
         let server = match load_tls_config() {
             Ok(Some(tls_config)) => {
-                log_message(format!("HTTPS (HTTP/2) Server running on 0.0.0.0:{}", port));
+                log!("HTTPS (HTTP/2) Server running on 0.0.0.0:{}", port);
                 let _config = (*tls_config).clone();
                 HttpServer::new(move || {
                     App::new()
@@ -46,8 +44,8 @@ pub async fn start(port: u16) -> bool {
                 .unwrap()
                 .run()
             }
-            Ok(None) => {
-                log_message(format!("HTTP Server running on 0.0.0.0:{}", port));
+            Ok(_) => {
+                log!("HTTP Server running on 0.0.0.0:{}", port);
                 HttpServer::new(move || {
                     App::new()
                         .app_data(web::Data::new(false))
@@ -60,7 +58,7 @@ pub async fn start(port: u16) -> bool {
                 .run()
             }
             Err(e) => {
-                log_message(format!("TLS config error: {}", e));
+                log!("TLS config error: {}", e);
                 return;
             }
         };
@@ -71,7 +69,7 @@ pub async fn start(port: u16) -> bool {
         ACTIVE_TASKS.lock().unwrap().push("WebServer".into());
         server.await.unwrap();
         ACTIVE_TASKS.lock().unwrap().retain(|t| t != "WebServer");
-        log_message("Web Server shutdown complete.");
+        log!("Web Server shutdown complete.");
     });
 
     if let Ok(server_handle) = rx.await {
@@ -87,7 +85,7 @@ pub async fn start(port: u16) -> bool {
 async fn wait_for_shutdown(server_handle: ServerHandle) {
     loop {
         if *SHUTDOWN.read().await {
-            log_message("Shutdown signal received.");
+            log!("Shutdown signal received.");
             server_handle.stop(true).await;
             break;
         }
@@ -102,7 +100,7 @@ fn load_tls_config() -> Result<Option<Arc<ServerConfig>>, Box<dyn StdError>> {
     let cert_file_buf = match cert_file_res {
         Ok(b) => b,
         Err(e) if e.kind() == ErrorKind::NotFound => {
-            log_message("TLS certificate 'certs/cert.pem' not found.");
+            log!("TLS certificate 'certs/cert.pem' not found.");
             return Ok(None);
         }
         Err(e) => return Err(e.into()), // Other IO error
@@ -111,7 +109,7 @@ fn load_tls_config() -> Result<Option<Arc<ServerConfig>>, Box<dyn StdError>> {
     let key_file_buf = match key_file_res {
         Ok(b) => b,
         Err(e) if e.kind() == ErrorKind::NotFound => {
-            log_message("TLS key 'certs/cert.key' not found.");
+            log!("TLS key 'certs/cert.key' not found.");
             return Ok(None);
         }
         Err(e) => return Err(e.into()), // Other IO error

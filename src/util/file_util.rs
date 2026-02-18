@@ -9,7 +9,7 @@ use uuid::Uuid;
 use walkdir::WalkDir;
 use zip::ZipArchive;
 
-use crate::gui::log_panel::log_message;
+use crate::log;
 
 #[allow(dead_code)]
 pub fn delete_directory(path: &str) -> bool {
@@ -23,11 +23,11 @@ fn delete_dir_recursive(directory: &Path) -> bool {
         return false;
     }
     if let Err(e) = fs::remove_dir_all(directory) {
-        log_message(format!(
+        log!(
             "[IMPORTANT] Couldn't delete directory {}: {}",
             directory.display(),
             e,
-        ));
+        );
         return false;
     }
     true
@@ -97,7 +97,7 @@ pub fn load_file(path: &str, name: &str) -> String {
 
     if !dir.exists() {
         if let Err(e) = fs::create_dir_all(&dir) {
-            log_message(format!("[IMPORTANT] Couldn't create directories: {}", e));
+            log!("[IMPORTANT] Couldn't create directories: {}", e);
             return String::new();
         }
         return String::new();
@@ -105,7 +105,7 @@ pub fn load_file(path: &str, name: &str) -> String {
 
     if !file_path.exists() {
         if let Err(e) = File::create(&file_path) {
-            log_message(format!("[IMPORTANT] Couldn't create file: {}", e));
+            log!("[IMPORTANT] Couldn't create file: {}", e);
         }
         return String::new();
     }
@@ -130,17 +130,17 @@ pub fn save_file(path: &str, name: &str, value: &str) {
 
     if !dir.exists() {
         if let Err(e) = fs::create_dir_all(&dir) {
-            log_message(format!("[IMPORTANT] Couldn't create directories: {}", e));
+            log!("[IMPORTANT] Couldn't create directories: {}", e);
             return;
         }
     }
 
     if let Err(e) = fs::write(&file_path, value) {
-        log_message(format!(
+        log!(
             "[IMPORTANT] Couldn't write file {}: {}",
             file_path.display(),
             e
-        ));
+        );
     }
 }
 
@@ -231,7 +231,7 @@ pub async fn download_zip(url: &str, zip_path: &Path) -> Result<(), Box<dyn std:
 
     if !response.status().is_success() {
         let err_msg = format!("Failed to download file: Status {}", response.status());
-        log_message(err_msg.clone());
+        log!("{}", err_msg.clone());
         return Err(err_msg.into());
     }
 
@@ -314,7 +314,7 @@ fn extract_zip_contents_to_folder(
         }
     }
 
-    log_message("Extracting directly (no single root folder detected).");
+    log!("Extracting directly (no single root folder detected).");
     let _ = fs::remove_dir_all(target_dir);
     fs::rename(&staging_dir, target_dir)?;
 
@@ -323,14 +323,14 @@ fn extract_zip_contents_to_folder(
 
 #[allow(dead_code)]
 pub async fn download_and_extract_zip(url: &str, as_name: &str) {
-    log_message("Downloading ZIP file...");
+    log!("Downloading ZIP file...");
     let base_dir = PathBuf::from(get_directory());
     let zip_filename = format!("{}.zip", Uuid::new_v4());
     let zip_path = base_dir.join(&zip_filename);
     let target_dir = base_dir.join(as_name);
 
     if let Err(e) = download_zip(url, &zip_path).await {
-        log_message(format!("Error downloading file: {}", e));
+        log!("Error downloading file: {}", e);
         return;
     }
 
@@ -341,18 +341,14 @@ pub async fn download_and_extract_zip(url: &str, as_name: &str) {
     let successful = match extract_result {
         Ok(()) => true,
         Err(e) => {
-            log_message(format!("Error during ZIP extraction: {}", e));
+            log!("Error during ZIP extraction: {}", e);
             false
         }
     };
 
     if let Err(e) = tokio::fs::remove_file(&zip_path).await {
-        log_message(format!(
-            "Error cleaning up ZIP file {}: {}",
-            zip_path.display(),
-            e
-        ));
+        log!("Error cleaning up ZIP file {}: {}", zip_path.display(), e);
     } else if successful {
-        log_message("Downloaded and extracted ZIP file successfully.");
+        log!("Downloaded and extracted ZIP file successfully.");
     }
 }

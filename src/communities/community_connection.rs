@@ -160,7 +160,7 @@ impl CommunityConnection {
 
         let user_pub_key: PublicKey = match PublicKey::from_bytes(&user_public_key_bytes) {
             Some(key) => key,
-            None => {
+            __ => {
                 self.send_error_response(&cv.get_id(), CommunicationType::error_invalid_user_id)
                     .await;
                 return;
@@ -178,7 +178,7 @@ impl CommunityConnection {
 
         let shared_secret = match community_private_key.to_diffie_hellman(&user_pub_key) {
             Some(secret) => secret,
-            None => {
+            _ => {
                 self.send_error_response(&cv.get_id(), CommunicationType::error)
                     .await;
                 return;
@@ -223,7 +223,7 @@ impl CommunityConnection {
     async fn handle_challenge_response(self: Arc<Self>, cv: CommunicationValue) {
         let client_challenge_response_b64 = match cv.get_data(DataTypes::challenge) {
             Some(data) => data.to_string(),
-            None => {
+            _ => {
                 self.send_error_response(&cv.get_id(), CommunicationType::error)
                     .await;
                 return;
@@ -273,7 +273,7 @@ impl CommunityConnection {
 
         let shared_secret = match community_private_key.to_diffie_hellman(&user_pub_key) {
             Some(secret) => secret,
-            None => {
+            _ => {
                 self.send_error_response(&cv.get_id(), CommunicationType::error)
                     .await;
                 return;

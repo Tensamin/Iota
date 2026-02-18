@@ -3,7 +3,7 @@ use json::{self, JsonValue, array, object};
 use std::fs::{self};
 use std::path::Path;
 
-use crate::gui::log_panel::log_message;
+use crate::log;
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum MessageState {
@@ -58,7 +58,7 @@ pub fn add_message(
     );
 
     if let Err(e) = fs::create_dir_all(&user_dir) {
-        log_message(format!("Failed to create chat directory: {}", e));
+        log!("Failed to create chat directory: {}", e);
         return;
     }
 
@@ -77,7 +77,7 @@ pub fn add_message(
                     break;
                 }
             } else {
-                log_message(format!("Failed to parse existing JSON file: {}", file_name));
+                log!("Failed to parse existing JSON file: {}", file_name);
             }
         } else {
             break;
@@ -85,7 +85,7 @@ pub fn add_message(
 
         chunk_index += 1;
         if chunk_index > 1000 {
-            log_message(format!("Too many message chunks. Aborting add."));
+            log!("Too many message chunks. Aborting add.");
             return;
         }
     }
@@ -98,7 +98,7 @@ pub fn add_message(
     };
 
     if let Err(e) = message_chunk.push(json_obj) {
-        log_message(format!("Failed to push new message into JSON array: {}", e));
+        log!("Failed to push new message into JSON array: {}", e);
         return;
     }
 

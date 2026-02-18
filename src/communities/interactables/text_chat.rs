@@ -4,7 +4,7 @@ use crate::{
         interactables::interactable::Interactable,
     },
     data::communication::{CommunicationType, CommunicationValue, DataTypes},
-    gui::log_panel::log_message,
+    log,
     util::file_util::{get_children, load_file, save_file},
 };
 use async_trait::async_trait;
@@ -37,7 +37,7 @@ impl TextChat {
         );
 
         if let Err(e) = fs::create_dir_all(user_dir) {
-            log_message(format!("Failed to create chat directory: {}", e));
+            log!("Failed to create chat directory: {}", e);
             return;
         }
 
@@ -56,16 +56,15 @@ impl TextChat {
                         break;
                     }
                 } else {
-                    log_message(format!("Failed to parse existing JSON file: {}", file_name));
+                    log!("Failed to parse existing JSON file: {}", file_name);
                 }
             } else {
-                // New file, use empty array
                 break;
             }
 
             chunk_index += 1;
             if chunk_index > 1000 {
-                log_message(format!("Too many message chunks. Aborting add."));
+                log!("Too many message chunks. Aborting add.");
                 return;
             }
         }
@@ -77,12 +76,12 @@ impl TextChat {
         };
 
         if let Err(e) = message_chunk.push(json_obj) {
-            log_message(format!("Failed to push new message into JSON array: {}", e));
+            log!("Failed to push new message into JSON array: {}", e);
             return;
         }
 
         let file_name = format!("msgs_{}.json", chunk_index);
-        log_message(format!("Saving message to {}/{}", user_dir, file_name));
+        log!("Saving message to {}/{}", user_dir, file_name);
         save_file(&user_dir, &file_name, &message_chunk.dump());
     }
     pub fn get_messages(&self, loaded_messages: i64, amount: i64) -> JsonValue {

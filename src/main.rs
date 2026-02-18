@@ -20,12 +20,8 @@ mod util;
 use crate::communities::community_manager;
 use crate::communities::interactables::registry;
 use crate::gui::app_state::AppState;
-use crate::gui::input_handler;
-use crate::gui::log_panel;
-use crate::gui::log_panel::{log_message, log_message_trans};
-use crate::gui::tui;
+use crate::gui::ui;
 use crate::langu::language_creator;
-use crate::langu::language_manager::format;
 use crate::omikron::omikron_connection::{OMIKRON_CONNECTION, OmikronConnection};
 use crate::server::server::start;
 use crate::terms::consent_state;
@@ -33,6 +29,7 @@ use crate::users::user_manager;
 use crate::util::config_util::CONFIG;
 use crate::util::file_util::download_and_extract_zip;
 use crate::util::file_util::has_dir;
+use crate::util::logger;
 
 pub static APP_STATE: LazyLock<Arc<Mutex<AppState>>> =
     LazyLock::new(|| Arc::new(Mutex::new(AppState::new())));
@@ -47,6 +44,9 @@ async fn main() {
     while *RELOAD.read().await {
         *RELOAD.write().await = false;
         *SHUTDOWN.write().await = false;
+
+        let tui = ui::UI::new(100, 100);
+        tokio::spawn(async move { tui.render() });
 
         // EULA
         let (tos, pp) = consent_state::ConsentManager::check().await;
@@ -71,16 +71,14 @@ async fn main() {
         }
 
         // UI
-        log_panel::setup();
-        tui::start_tui();
-        input_handler::setup_input_handler();
+        logger::startup();
 
         // BASIC CONFIGURATION
         &CONFIG.write().await.load();
 
         // USER MANAGEMENT
         if let Err(_) = user_manager::load_users().await {
-            log_message_trans("user_load_failed");
+            log_t!("user_load_failed");
         }
 
         let mut sb = "".to_string();
@@ -94,11 +92,11 @@ async fn main() {
             sb.remove(0);
             sb = sb + ",";
         }
-        log_message(format!(
+        log!(
             "IOTA ID:  {}",
             CONFIG.read().await.get_iota_id().to_string()
-        ));
-        log_message(format!("User IDS: {}", sb));
+        );
+        log!("User IDS: {}", sb);
 
         // COMMUNITY MANAGEMENT
         registry::load_interactables().await;
@@ -113,7 +111,7 @@ async fn main() {
             sb1.remove(0);
             sb1 = sb1 + ",";
         }
-        log_message(format!("Community IDS: {}", sb1));
+        log!("Community IDS: {}", sb1);
         let port = CONFIG.read().await.get_port();
         let mut ip = "0.0.0.0".to_string();
         for iface in pnet::datalink::interfaces() {
@@ -127,12 +125,12 @@ async fn main() {
             }
         }
         if start(port).await {
-            log_message(format("community_active", &[&ip, &port.to_string()]));
+            log_t!("community_active", ip, port.to_string());
         } else {
             if port < 1024 {
-                log_message(format("community_start_error_admin", &[&port.to_string()]));
+                log_t!("community_start_error_admin", port.to_string());
             } else {
-                log_message(format("community_start_error", &[&port.to_string()]));
+                log_t!("community_start_error", port.to_string());
             }
         }
         if !has_dir("web") {
@@ -150,7 +148,7 @@ async fn main() {
             omikron.connect().await;
             let mut omikron_connection = OMIKRON_CONNECTION.write().await;
             *omikron_connection = Some(omikron.clone());
-            log_message_trans("setup_completed");
+            log_t!("setup_completed");
             loop {
                 if *SHUTDOWN.read().await {
                     break;

@@ -1,5 +1,5 @@
 use crate::communities::community::{self, Community};
-use crate::gui::log_panel;
+use crate::log;
 use crate::util::file_util;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
@@ -35,7 +35,7 @@ pub async fn load_communities() {
         if let Some(community) = community::load(&name).await {
             add_community(community).await;
         } else {
-            log_panel::log_message(format!("failed to load the {} community", &name));
+            log!("failed to load the {} community", &name);
         }
     }
 }

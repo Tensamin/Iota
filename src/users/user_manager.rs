@@ -1,5 +1,5 @@
 use crate::data::communication::{CommunicationType, CommunicationValue, DataTypes};
-use crate::gui::log_panel::log_message;
+use crate::log;
 use crate::omikron::omikron_connection::{OMIKRON_CONNECTION, OmikronConnection};
 use crate::users::user_profile::UserProfile;
 use crate::util::crypto_helper::{self, public_key_to_base64};
@@ -113,7 +113,7 @@ pub async fn create_user(username: &str) -> (Option<UserProfile>, Option<String>
     }
     *SHUTDOWN.write().await = true;
     *RELOAD.write().await = true;
-    log_message("Created User");
+    log!("Created User");
     save_file(
         "",
         &format!("{}.tu", username),

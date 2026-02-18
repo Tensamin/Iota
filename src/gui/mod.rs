@@ -1,8 +1,10 @@
-pub mod app_state;
-pub mod log_panel;
-pub mod settings_panel;
-pub mod widgets {
-    pub mod betterblock;
+pub mod elements {
+    pub mod elements;
+    pub mod log_card;
 }
-pub mod input_handler;
-pub mod tui;
+pub mod screens {
+    pub mod screens;
+}
+pub mod app_state;
+pub mod interaction_result;
+pub mod ui;

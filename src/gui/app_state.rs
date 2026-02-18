@@ -1,10 +1,10 @@
-use std::collections::VecDeque;
-
+use crate::gui::elements::log_card::UiLogEntry;
 use json::{JsonValue, object};
+use std::collections::VecDeque;
 
 #[derive(Clone)]
 pub struct AppState {
-    pub logs: VecDeque<String>,
+    pub logs: VecDeque<UiLogEntry>,
     pub cpu: Vec<(f64, f64)>,
     pub ram: Vec<(f64, f64)>,
     pub ping: Vec<(f64, f64)>,
@@ -28,11 +28,15 @@ impl AppState {
         }
     }
 
-    pub fn push_log(&mut self, msg: String) {
+    pub fn push_log(&mut self, msg: UiLogEntry) {
         if self.logs.len() >= MAX_LOGS {
             self.logs.pop_front();
         }
         self.logs.push_back(msg);
+    }
+
+    pub fn get_logs(&self) -> &VecDeque<UiLogEntry> {
+        &self.logs
     }
 
     pub fn push_cpu(&mut self, pt: (f64, f64)) {
@@ -112,28 +116,23 @@ impl AppState {
         let len = data.len();
 
         if len >= width_usize {
-            // Trim data to fit
             data[len - width_usize..].to_vec()
         } else {
             let mut result = Vec::with_capacity(width_usize);
 
-            // Define X spacing (so dummy points are properly spaced across the canvas)
             let dx = 1.0;
             let pad_len = width_usize - len;
 
-            // If we have real data, use its first x position to determine where to start padding
             let start_x = data
                 .first()
                 .map(|(x, _)| x - (dx * pad_len as f64))
                 .unwrap_or(0.0);
             let _ = data.first().map(|(_, y)| *y).unwrap_or(0.0);
 
-            // Fill padding with increasing x positions so they're visible
             for i in 0..pad_len {
                 result.push((start_x + i as f64 * dx, -1 as f64));
             }
 
-            // Then append the real data
             result.extend_from_slice(data);
             result
         }

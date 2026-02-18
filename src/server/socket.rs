@@ -1,6 +1,6 @@
 use crate::{
     data::communication::{CommunicationType, CommunicationValue},
-    gui::log_panel::log_message,
+    log,
 };
 use actix::{Actor, ActorContext, AsyncContext, StreamHandler};
 use actix_web_actors::ws;
@@ -57,21 +57,21 @@ impl Actor for WsSession {
     fn started(&mut self, ctx: &mut Self::Context) {
         self.start_heartbeat(ctx);
 
-        log_message(format!("WebSocket session started for path: {}", self.path));
+        log!("WebSocket session started for path: {}", self.path);
 
         if self.path.starts_with("/ws/users/") {
-            log_message(format!("UserConnection handling is not yet implemented.",));
+            log!("UserConnection handling is not yet implemented.");
         } else if self.path.starts_with("/ws/community/") {
             let community_id = self.path.split('/').nth(3).unwrap_or_default();
-            log_message(format!(
+            log!(
                 "CommunityConnection handling for {} is not yet implemented.",
                 community_id
-            ));
+            );
         }
     }
 
     fn stopped(&mut self, _ctx: &mut Self::Context) {
-        log_message(format!("WebSocket session stopped for path: {}", self.path));
+        log!("WebSocket session stopped for path: {}", self.path);
     }
 }
 
