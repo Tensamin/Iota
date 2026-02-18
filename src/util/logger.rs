@@ -9,7 +9,11 @@ use std::{
 
 use ratatui::style::Color;
 
-use crate::{APP_STATE, gui::elements::log_card::UiLogEntry, langu::language_manager};
+use crate::{
+    APP_STATE,
+    gui::{elements::log_card::UiLogEntry, ui::UNIQUE},
+    langu::language_manager,
+};
 
 static LOGGER: OnceLock<mpsc::Sender<LogMessage>> = OnceLock::new();
 
@@ -118,6 +122,9 @@ pub fn log_internal_translated(
     args: Vec<String>,
 ) {
     if let Some(tx) = LOGGER.get() {
+        tokio::spawn(async move {
+            *UNIQUE.write().await = true;
+        });
         let _ = tx.send(LogMessage {
             timestamp_ms: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -135,6 +142,9 @@ pub fn log_internal_translated(
 
 pub fn log_internal(kind: PrintType, prefix: &'static str, is_error: bool, message: String) {
     if let Some(tx) = LOGGER.get() {
+        tokio::spawn(async move {
+            *UNIQUE.write().await = true;
+        });
         let _ = tx.send(LogMessage {
             timestamp_ms: SystemTime::now()
                 .duration_since(UNIX_EPOCH)

@@ -25,7 +25,7 @@ use crate::gui::ui::start_tui;
 use crate::langu::language_creator;
 use crate::omikron::omikron_connection::{OMIKRON_CONNECTION, OmikronConnection};
 use crate::server::server::start;
-use crate::terms::consent_state::ConsentManager;
+use crate::terms::consent_state;
 use crate::users::user_manager;
 use crate::util::config_util::CONFIG;
 use crate::util::file_util::download_and_extract_zip;
@@ -56,7 +56,7 @@ async fn main() {
             }
         });
 
-        let (eula, tos_pp) = ConsentManager::check(ui.clone()).await;
+        let (eula, tos_pp) = consent_state::check(ui.clone()).await;
 
         if !eula {
             *SHUTDOWN.write().await = true;

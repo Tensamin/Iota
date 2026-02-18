@@ -14,142 +14,163 @@ use crate::{
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-pub struct ConsentManager;
-impl ConsentManager {
-    pub async fn check(ui: Arc<UI>) -> (bool, bool) {
-        let file = load_file("", "agreements");
-        let mut state = ConsentState::from_str(&file).sanitize();
+pub async fn check(ui: Arc<UI>) -> (bool, bool) {
+    let mut state = ConsentState::load_state();
 
-        if !state.accepted_eula {
-            let (tx, rx) = oneshot::channel();
+    if ensure_initial_consent(ui.clone(), &mut state)
+        .await
+        .is_err()
+    {
+        return (false, false);
+    }
+    if ensure_updates(ui, &mut state).await.is_err() {
+        return (false, false);
+    };
 
-            ui.set_screen(Box::new(TermsCheckerScreen::new(ui.clone(), Some(tx))))
-                .await;
+    state = state.sanitize();
+    state.save_state();
 
-            let result = rx.await.unwrap_or(UserChoice::Deny);
+    (state.accepted_eula, state.accepted_tos && state.accepted_pp)
+}
 
-            match result {
-                UserChoice::AcceptEULA | UserChoice::AcceptAll => {
-                    if let Some((current_eula, current_tos, current_privacy)) =
-                        get_current_docs().await
-                    {
-                        state.accepted_eula = true;
-                        state.eula = Some(current_eula);
-
-                        if matches!(result, UserChoice::AcceptAll) {
-                            state.accepted_tos = true;
-                            state.accepted_pp = true;
-                            state.tos = Some(current_tos);
-                            state.privacy = Some(current_privacy);
-                        }
-                    }
-                }
-                UserChoice::Deny => return (false, false),
-            }
-
-            save_file("", "agreements", &state.to_string());
-        }
-
-        if let Some((eula_update, tos_update, privacy_update)) = Self::get_updates().await {
-            let is_forced = matches!(eula_update, UpdateDecision::Forced(_))
-                || matches!(tos_update, UpdateDecision::Forced(_))
-                || matches!(privacy_update, UpdateDecision::Forced(_));
-
-            let (tx, rx) = oneshot::channel();
-
-            ui.set_screen(Box::new(TermsUpdaterScreen::new(
-                ui.clone(),
-                eula_update.clone(),
-                tos_update.clone(),
-                privacy_update.clone(),
-                Some(tx),
-            )))
-            .await;
-
-            let result = rx.await.unwrap_or(UserChoice::Deny);
-
-            if is_forced {
-                match result {
-                    UserChoice::AcceptAll => {
-                        state.accepted_eula = true;
-                        state.accepted_tos = true;
-                        state.accepted_pp = true;
-                    }
-                    UserChoice::AcceptEULA => {
-                        state.accepted_eula = true;
-                    }
-                    UserChoice::Deny => return (false, false),
-                }
-            } else {
-                match result {
-                    UserChoice::AcceptAll => {
-                        if let UpdateDecision::Future { newest } = eula_update {
-                            state.future_eula = Some(newest);
-                        }
-                        if let UpdateDecision::Future { newest } = tos_update {
-                            state.future_tos = Some(newest);
-                        }
-                        if let UpdateDecision::Future { newest } = privacy_update {
-                            state.future_privacy = Some(newest);
-                        }
-                    }
-                    UserChoice::AcceptEULA => {
-                        if let UpdateDecision::Future { newest } = eula_update {
-                            state.future_eula = Some(newest);
-                        }
-                    }
-                    UserChoice::Deny => {}
-                }
-            }
-
-            state = state.sanitize();
-            save_file("", "agreements", &state.to_string());
-        }
-
-        state = ConsentState::from_str(&load_file("", "agreements")).sanitize();
-        save_file("", "agreements", &state.to_string());
-
-        (state.accepted_eula, state.accepted_tos && state.accepted_pp)
+async fn ensure_initial_consent(ui: Arc<UI>, state: &mut ConsentState) -> Result<(), ()> {
+    if state.accepted_eula {
+        return Ok(());
     }
 
-    async fn get_updates() -> Option<(
-        // Ok(None) indicates no update
-        // Ok(Some) Indicates a future update
-        // Err indicates a update that has to be accepted before the programm can continue
-        UpdateDecision,
-        UpdateDecision,
-        UpdateDecision,
-    )> {
+    let (tx, rx) = oneshot::channel();
+
+    ui.set_screen(Box::new(TermsCheckerScreen::new(ui.clone(), Some(tx))))
+        .await;
+
+    let result = rx.await.unwrap_or(UserChoice::Deny);
+
+    match result {
+        UserChoice::AcceptEULA | UserChoice::AcceptAll => {
+            if let Some((eula, tos, privacy)) = get_current_docs().await {
+                state.accepted_eula = true;
+                state.eula = Some(eula);
+
+                if matches!(result, UserChoice::AcceptAll) {
+                    state.accepted_tos = true;
+                    state.accepted_pp = true;
+                    state.tos = Some(tos);
+                    state.privacy = Some(privacy);
+                }
+            }
+
+            &state.save_state();
+            Ok(())
+        }
+        UserChoice::Deny => Err(()),
+    }
+}
+async fn ensure_updates(ui: Arc<UI>, state: &mut ConsentState) -> Result<(), ()> {
+    let Some((eula_update, tos_update, privacy_update)) = get_updates().await else {
+        return Ok(());
+    };
+
+    let is_forced = matches!(eula_update, UpdateDecision::Forced(_))
+        || matches!(tos_update, UpdateDecision::Forced(_))
+        || matches!(privacy_update, UpdateDecision::Forced(_));
+
+    let (tx, rx) = oneshot::channel();
+
+    ui.set_screen(Box::new(TermsUpdaterScreen::new(
+        ui.clone(),
+        eula_update.clone(),
+        tos_update.clone(),
+        privacy_update.clone(),
+        Some(tx),
+    )))
+    .await;
+
+    let result = rx.await.unwrap_or(UserChoice::Deny);
+
+    if is_forced {
+        match result {
+            UserChoice::AcceptAll => {
+                state.accepted_eula = true;
+                state.accepted_tos = true;
+                state.accepted_pp = true;
+            }
+            UserChoice::AcceptEULA => {
+                state.accepted_eula = true;
+            }
+            UserChoice::Deny => return Err(()),
+        }
+    } else {
+        apply_future_updates(state, result, eula_update, tos_update, privacy_update);
+    }
+
+    state.save_state();
+    Ok(())
+}
+fn apply_future_updates(
+    state: &mut ConsentState,
+    result: UserChoice,
+    eula_update: UpdateDecision,
+    tos_update: UpdateDecision,
+    privacy_update: UpdateDecision,
+) {
+    match result {
+        UserChoice::AcceptAll => {
+            if let UpdateDecision::Future { newest } = eula_update {
+                state.future_eula = Some(newest);
+            }
+            if let UpdateDecision::Future { newest } = tos_update {
+                state.future_tos = Some(newest);
+            }
+            if let UpdateDecision::Future { newest } = privacy_update {
+                state.future_privacy = Some(newest);
+            }
+        }
+        UserChoice::AcceptEULA => {
+            if let UpdateDecision::Future { newest } = eula_update {
+                state.future_eula = Some(newest);
+            }
+        }
+        UserChoice::Deny => {}
+    }
+}
+
+async fn get_updates() -> Option<(
+    // Ok(None) indicates no update
+    // Ok(Some) Indicates a future update
+    // Err indicates a update that has to be accepted before the programm can continue
+    UpdateDecision,
+    UpdateDecision,
+    UpdateDecision,
+)> {
+    if let (
+        Some((current_eula, current_tos, current_privacy)),
+        Some((newest_eula, newest_tos, newest_privacy)),
+    ) = (get_current_docs().await, get_newest_docs().await)
+    {
         let file = load_file("", "agreements");
         let accepted_state = ConsentState::from_str(&file).sanitize();
         save_file("", "agreements", &accepted_state.to_string());
 
-        if let (
-            Some((current_eula, current_tos, current_privacy)),
-            Some((newest_eula, newest_tos, newest_privacy)),
-        ) = (get_current_docs().await, get_newest_docs().await)
-        {
-            let eula_update: UpdateDecision = if current_eula.equals_some(&accepted_state.eula) {
-                if current_eula.equals(&newest_eula) {
-                    UpdateDecision::NoChange
-                } else {
-                    if newest_eula.equals_some(&accepted_state.future_eula) {
-                        UpdateDecision::NoChange
-                    } else {
-                        UpdateDecision::Future {
-                            newest: newest_eula,
-                        }
-                    }
-                }
-            } else if newest_eula.equals_some(&accepted_state.eula) {
+        let eula_update: UpdateDecision = if current_eula.equals_some(&accepted_state.eula) {
+            if current_eula.equals(&newest_eula) {
                 UpdateDecision::NoChange
             } else {
-                UpdateDecision::Forced(current_eula)
-            };
+                if newest_eula.equals_some(&accepted_state.future_eula) {
+                    UpdateDecision::NoChange
+                } else {
+                    UpdateDecision::Future {
+                        newest: newest_eula,
+                    }
+                }
+            }
+        } else if newest_eula.equals_some(&accepted_state.eula) {
+            UpdateDecision::NoChange
+        } else {
+            UpdateDecision::Forced(current_eula)
+        };
 
-            let tos_update: UpdateDecision = if !accepted_state.accepted_tos
-                || newest_tos.equals_some(&accepted_state.tos)
-            {
+        let tos_update: UpdateDecision =
+            if !accepted_state.accepted_tos || newest_tos.equals_some(&accepted_state.tos) {
                 UpdateDecision::NoChange
             } else if accepted_state.accepted_tos && current_tos.equals_some(&accepted_state.tos) {
                 if current_tos.equals(&newest_tos) {
@@ -165,38 +186,34 @@ impl ConsentManager {
                 UpdateDecision::Forced(current_tos)
             };
 
-            let privacy_update: UpdateDecision = if !accepted_state.accepted_pp
-                || newest_privacy.equals_some(&accepted_state.privacy)
-            {
+        let privacy_update: UpdateDecision = if !accepted_state.accepted_pp
+            || newest_privacy.equals_some(&accepted_state.privacy)
+        {
+            UpdateDecision::NoChange
+        } else if accepted_state.accepted_pp && current_privacy.equals_some(&accepted_state.privacy)
+        {
+            if current_privacy.equals(&newest_privacy) {
                 UpdateDecision::NoChange
-            } else if accepted_state.accepted_pp
-                && current_privacy.equals_some(&accepted_state.privacy)
-            {
-                if current_privacy.equals(&newest_privacy) {
+            } else {
+                if newest_privacy.equals_some(&accepted_state.future_privacy) {
                     UpdateDecision::NoChange
                 } else {
-                    if newest_privacy.equals_some(&accepted_state.future_privacy) {
-                        UpdateDecision::NoChange
-                    } else {
-                        UpdateDecision::Future {
-                            newest: newest_privacy,
-                        }
+                    UpdateDecision::Future {
+                        newest: newest_privacy,
                     }
                 }
-            } else {
-                UpdateDecision::Forced(current_privacy)
-            };
-            match (&eula_update, &tos_update, &privacy_update) {
-                (
-                    &UpdateDecision::NoChange,
-                    &UpdateDecision::NoChange,
-                    &UpdateDecision::NoChange,
-                ) => None,
-                _ => Some((eula_update, tos_update, privacy_update)),
             }
         } else {
-            None
+            UpdateDecision::Forced(current_privacy)
+        };
+        match (&eula_update, &tos_update, &privacy_update) {
+            (&UpdateDecision::NoChange, &UpdateDecision::NoChange, &UpdateDecision::NoChange) => {
+                None
+            }
+            _ => Some((eula_update, tos_update, privacy_update)),
         }
+    } else {
+        None
     }
 }
 
@@ -262,7 +279,16 @@ impl ConsentState {
         self
     }
 
-    pub fn to_string(&self) -> String {
+    pub fn load_state() -> ConsentState {
+        let file = load_file("", "agreements");
+        ConsentState::from_str(&file).sanitize()
+    }
+
+    pub fn save_state(&self) {
+        save_file("", "agreements", &self.to_string());
+    }
+
+    fn to_string(&self) -> String {
         let current_secs = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
