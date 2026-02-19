@@ -1,5 +1,5 @@
 use crate::{
-    SHUTDOWN,
+    ACTIVE_TASKS, SHUTDOWN,
     gui::{
         input_handler::setup_input_handler, interaction_result::InteractionResult,
         screens::screens::Screen,
@@ -13,10 +13,12 @@ use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
-use tokio::sync::RwLock;
+use tokio::{sync::RwLock, time::Instant};
 
 /// UI state and rendering
 pub static UNIQUE: Lazy<RwLock<bool>> = Lazy::new(|| RwLock::new(true));
+
+pub static FPS: Lazy<RwLock<f64>> = Lazy::new(|| RwLock::new(0.0));
 pub struct UI {
     pub terminal: Arc<Mutex<Terminal<CrosstermBackend<Stdout>>>>,
     screen: Arc<RwLock<Option<Box<dyn Screen>>>>,
@@ -26,6 +28,9 @@ pub fn start_tui() -> Arc<UI> {
     let ui = Arc::new(UI::new());
     let uic = ui.clone();
     tokio::spawn(async move {
+        ACTIVE_TASKS.insert("UI Renderer".to_string());
+        let mut last_render = Instant::now();
+        let mut last: Vec<f64> = Vec::new();
         loop {
             if *SHUTDOWN.read().await {
                 break;
@@ -33,10 +38,19 @@ pub fn start_tui() -> Arc<UI> {
 
             if *UNIQUE.read().await {
                 uic.render().await;
-            } else {
-                tokio::time::sleep(Duration::from_millis(50)).await;
+                let elapsed = last_render.elapsed().as_secs_f64();
+                if elapsed > 0.0 {
+                    last.push(1.0 / elapsed);
+                }
+                if last.len() > 10 {
+                    last.remove(0);
+                }
+                *FPS.write().await = last.iter().sum::<f64>() / last.len() as f64;
+                last_render = Instant::now();
             }
+            tokio::time::sleep(Duration::from_millis(16)).await;
         }
+        ACTIVE_TASKS.remove("UI Renderer");
         ratatui::restore();
     });
     setup_input_handler(ui.clone());

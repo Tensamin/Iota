@@ -34,7 +34,7 @@ fn delete_dir_recursive(directory: &Path) -> bool {
 }
 
 #[allow(dead_code)]
-pub fn delete_user_directory(user_id: Uuid) {
+pub fn delete_user_directory(user_id: i64) {
     let user_dir = Path::new(&get_directory())
         .join("users")
         .join(user_id.to_string());
@@ -189,7 +189,7 @@ pub fn get_directory_size(directory: &Path) -> u64 {
 }
 
 #[allow(dead_code)]
-pub fn get_designed_storage(user_id: Uuid) -> String {
+pub fn get_designed_storage(user_id: i64) -> String {
     let user_dir = Path::new(&get_directory())
         .join("users")
         .join(user_id.to_string());

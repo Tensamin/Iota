@@ -30,7 +30,7 @@ pub enum PrintType {
 
 struct LogMessage {
     timestamp_ms: u128,
-    prefix: &'static str,
+    prefix: String,
     kind: PrintType,
     is_error: bool,
 
@@ -116,7 +116,7 @@ fn fixed_box(content: &str, width: usize) -> String {
 
 pub fn log_internal_translated(
     kind: PrintType,
-    prefix: &'static str,
+    prefix: String,
     is_error: bool,
     key: &str,
     args: Vec<String>,
@@ -140,7 +140,7 @@ pub fn log_internal_translated(
     }
 }
 
-pub fn log_internal(kind: PrintType, prefix: &'static str, is_error: bool, message: String) {
+pub fn log_internal(kind: PrintType, prefix: String, is_error: bool, message: String) {
     if let Some(tx) = LOGGER.get() {
         tokio::spawn(async move {
             *UNIQUE.write().await = true;
@@ -162,12 +162,12 @@ pub fn log_internal(kind: PrintType, prefix: &'static str, is_error: bool, messa
 
 use crate::data::communication::CommunicationValue;
 use json::JsonValue;
-pub fn log_cv_internal(cv: &CommunicationValue, print_type: Option<PrintType>) {
+pub fn log_cv_internal(prefix: String, cv: &CommunicationValue, print_type: Option<PrintType>) {
     let formatted = format_cv(cv);
 
     log_internal(
         print_type.unwrap_or(PrintType::General),
-        "",
+        prefix,
         false,
         formatted,
     );
@@ -211,10 +211,28 @@ pub fn format_cv(cv: &CommunicationValue) -> String {
 #[macro_export]
 macro_rules! log_cv {
     ($kind:expr, $cv:expr) => {
-        $crate::util::logger::log_cv_internal(&$cv, Some($kind))
+        $crate::util::logger::log_cv_internal("".to_string(), &$cv, Some($kind))
     };
     ($cv:expr) => {
-        $crate::util::logger::log_cv_internal(&$cv, None)
+        $crate::util::logger::log_cv_internal("".to_string(), &$cv, None)
+    };
+}
+#[macro_export]
+macro_rules! log_cv_in {
+    ($kind:expr, $cv:expr) => {
+        $crate::util::logger::log_cv_internal("> ".to_string(), &$cv, Some($kind))
+    };
+    ($cv:expr) => {
+        $crate::util::logger::log_cv_internal("> ".to_string(), &$cv, None)
+    };
+}
+#[macro_export]
+macro_rules! log_cv_out {
+    ($kind:expr, $cv:expr) => {
+        $crate::util::logger::log_cv_internal("< ".to_string(), &$cv, Some($kind))
+    };
+    ($cv:expr) => {
+        $crate::util::logger::log_cv_internal("< ".to_string(), &$cv, None)
     };
 }
 
@@ -223,7 +241,7 @@ macro_rules! log_t {
     ($key:expr) => {
         $crate::util::logger::log_internal_translated(
             $crate::util::logger::PrintType::General,
-            "",
+            "".to_string(),
             false,
             $key,
             vec![]
@@ -233,7 +251,7 @@ macro_rules! log_t {
     ($key:expr, $($arg:expr),+) => {
         $crate::util::logger::log_internal_translated(
             $crate::util::logger::PrintType::General,
-            "",
+            "".to_string(),
             false,
             $key,
             vec![$($arg),+]
@@ -245,7 +263,7 @@ macro_rules! log_t_err {
     ($key:expr) => {
         $crate::util::logger::log_internal_translated(
             $crate::util::logger::PrintType::General,
-            ">>",
+            "".to_string(),
             true,
             $key,
             vec![]
@@ -255,7 +273,7 @@ macro_rules! log_t_err {
     ($key:expr, $($arg:expr),+) => {
         $crate::util::logger::log_internal_translated(
             $crate::util::logger::PrintType::General,
-            ">>",
+            "".to_string(),
             true,
             $key,
             vec![$($arg.to_string()),+]
@@ -267,7 +285,7 @@ macro_rules! log_t_err {
 #[macro_export]
 macro_rules! log {
     ($($arg:tt)*) => {
-        $crate::util::logger::log_internal($crate::util::logger::PrintType::General, "", false, format!($($arg)*))
+        $crate::util::logger::log_internal($crate::util::logger::PrintType::General, "".to_string(), false, format!($($arg)*))
     };
 }
 /// Log an inbound message (`>`).
@@ -276,7 +294,7 @@ macro_rules! log_in {
     ($($arg:tt)*) => {
         $crate::util::logger::log_internal(
             $crate::util::logger::PrintType::General,
-            ">",
+            ">".to_string(),
             false,
             format!($($arg)*)
         )
@@ -288,7 +306,7 @@ macro_rules! log_out {
     ($($arg:tt)*) => {
         $crate::util::logger::log_internal(
             $crate::util::logger::PrintType::General,
-            "<",
+            "<".to_string(),
             false,
             format!($($arg)*)
         )
@@ -300,7 +318,7 @@ macro_rules! log_err {
     ($($arg:tt)*) => {
         $crate::util::logger::log_internal(
             $crate::util::logger::PrintType::General,
-            ">>",
+            ">>".to_string(),
             true,
             format!($($arg)*)
         )

@@ -1,3 +1,4 @@
+use dashmap::DashSet;
 use once_cell::sync::Lazy;
 use pnet::datalink::NetworkInterface;
 use std::sync::Arc;
@@ -37,7 +38,7 @@ pub static APP_STATE: LazyLock<Arc<Mutex<AppState>>> =
 
 pub static SHUTDOWN: Lazy<RwLock<bool>> = Lazy::new(|| RwLock::new(false));
 pub static RELOAD: Lazy<RwLock<bool>> = Lazy::new(|| RwLock::new(true));
-pub static ACTIVE_TASKS: Lazy<Mutex<Vec<String>>> = Lazy::new(|| Mutex::new(Vec::new()));
+pub static ACTIVE_TASKS: Lazy<DashSet<String>> = Lazy::new(|| DashSet::new());
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 8)]
 #[allow(unused_must_use, dead_code)]
@@ -48,20 +49,12 @@ async fn main() {
 
         let ui = start_tui();
 
-        let ui_clone = ui.clone();
-        tokio::spawn(async move {
-            loop {
-                ui_clone.render().await;
-                sleep(Duration::from_millis(16)).await;
-            }
-        });
-
         let (eula, tos_pp) = consent_state::check(ui.clone()).await;
 
         if !eula {
             *SHUTDOWN.write().await = true;
             loop {
-                if ACTIVE_TASKS.lock().unwrap().is_empty() {
+                if ACTIVE_TASKS.is_empty() {
                     break;
                 }
                 sleep(Duration::from_secs(1)).await;
@@ -73,7 +66,7 @@ async fn main() {
         if !tos_pp {
             *SHUTDOWN.write().await = true;
             loop {
-                if ACTIVE_TASKS.lock().unwrap().is_empty() {
+                if ACTIVE_TASKS.is_empty() {
                     break;
                 }
                 sleep(Duration::from_millis(100)).await;
@@ -171,8 +164,10 @@ async fn main() {
             }
             let omikron: Arc<OmikronConnection> = Arc::new(OmikronConnection::new());
             omikron.connect().await;
-            let mut omikron_connection = OMIKRON_CONNECTION.write().await;
-            *omikron_connection = Some(omikron.clone());
+            {
+                let mut omikron_connection = OMIKRON_CONNECTION.write().await;
+                *omikron_connection = Some(omikron.clone());
+            }
             log_t!("setup_completed");
             loop {
                 if *SHUTDOWN.read().await {
@@ -186,7 +181,7 @@ async fn main() {
         }
         if *RELOAD.read().await {
             loop {
-                if ACTIVE_TASKS.lock().unwrap().is_empty() {
+                if ACTIVE_TASKS.is_empty() {
                     break;
                 }
                 sleep(Duration::from_secs(1)).await;

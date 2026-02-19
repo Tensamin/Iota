@@ -7,10 +7,7 @@ use std::time::Duration;
 
 pub fn setup_input_handler(ui: Arc<UI>) {
     tokio::spawn(async move {
-        ACTIVE_TASKS
-            .lock()
-            .unwrap()
-            .push("Input Handler".to_string());
+        ACTIVE_TASKS.insert("Input Handler".to_string());
 
         loop {
             {
@@ -42,8 +39,7 @@ pub fn setup_input_handler(ui: Arc<UI>) {
             }
         }
         {
-            let mut tasks = ACTIVE_TASKS.lock().unwrap();
-            tasks.retain(|t| t != "Input Handler");
+            ACTIVE_TASKS.remove("Input Handler");
         }
     });
 }

@@ -1,7 +1,7 @@
 use crate::gui::{
     elements::{
         console_card::ConsoleCard,
-        elements::{Element, InteractableElement, JoinableElement},
+        elements::{InteractableElement, JoinableElement},
         log_card::LogCard,
     },
     interaction_result::InteractionResult,

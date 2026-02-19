@@ -1,19 +1,32 @@
-use actix_web::web::block;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent};
+use json::JsonValue;
 use ratatui::{
     Frame,
-    layout::{Alignment, Constraint, Layout, Rect},
+    layout::Rect,
     style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
 };
 
-use crate::gui::{
-    elements::elements::{Element, InteractableElement, JoinableElement},
-    interaction_result::InteractionResult,
-    util::borders::draw_block_joins,
+use crate::{
+    ACTIVE_TASKS,
+    data::communication::{CommunicationType, CommunicationValue, DataTypes},
+    gui::{
+        elements::elements::{Element, InteractableElement, JoinableElement},
+        interaction_result::InteractionResult,
+        ui::{FPS, UI},
+        util::borders::draw_block_joins,
+    },
+    log, log_cv,
+    omikron::omikron_connection::OMIKRON_CONNECTION,
+    users::{user_manager, user_profile::UserProfile},
+    util::file_util,
 };
-use std::any::Any;
+use std::{
+    any::Any,
+    sync::Arc,
+    time::{Duration, SystemTime},
+};
 
 pub struct ConsoleCard {
     focused: bool,
@@ -115,6 +128,10 @@ impl InteractableElement for ConsoleCard {
     fn interact(&mut self, key: KeyEvent) -> InteractionResult {
         match key.code {
             KeyCode::Enter => {
+                let command = self.content.clone();
+                tokio::spawn(async move {
+                    run_command(&command).await;
+                });
                 self.content = "".to_string();
                 InteractionResult::Handled
             }
@@ -143,5 +160,116 @@ impl InteractableElement for ConsoleCard {
 
     fn focus(&mut self, f: bool) {
         self.focused = f;
+    }
+}
+pub async fn run_command(command: &str) {
+    log!(":{}", command);
+
+    let parts = command.split(" ").collect::<Vec<&str>>();
+
+    match parts.as_slice() {
+        ["tasks"] => {
+            let active_tasks: Vec<String> =
+                ACTIVE_TASKS.clone().iter().map(|v| v.to_string()).collect();
+            log!("Active tasks: {:?}", active_tasks);
+        }
+        ["fps"] => {
+            log!("FPS: {}", *FPS.read().await);
+        }
+        ["ping"] => {
+            let time = 20;
+
+            let now = SystemTime::now();
+
+            let conn = {
+                let guard = OMIKRON_CONNECTION.read().await;
+                guard.as_ref().cloned()
+            };
+
+            let conn = match conn {
+                Some(c) => c,
+                None => return,
+            };
+
+            let response_cv = conn
+                .await_response(
+                    &CommunicationValue::new(CommunicationType::ping),
+                    Some(Duration::from_secs(time)),
+                )
+                .await;
+
+            let elapsed = now.elapsed().unwrap_or(Duration::ZERO);
+
+            match response_cv {
+                Ok(response) => log_cv!(response.add_data(
+                    DataTypes::get_time,
+                    JsonValue::from(elapsed.as_millis() as i64)
+                )),
+                Err(err) => log!("Ping error: {:?}", err),
+            }
+        }
+        ["ping", time] => {
+            let time = time.parse::<u64>().unwrap_or(20);
+
+            let conn = {
+                let guard = OMIKRON_CONNECTION.read().await;
+                guard.as_ref().cloned()
+            };
+
+            let conn = match conn {
+                Some(c) => c,
+                None => return,
+            };
+
+            let response_cv = conn
+                .await_response(
+                    &CommunicationValue::new(CommunicationType::ping),
+                    Some(Duration::from_secs(time)),
+                )
+                .await;
+            match response_cv {
+                Ok(response) => log_cv!(response),
+                Err(err) => log!("Ping error: {:?}", err),
+            }
+        }
+        ["user", "add", username] => {
+            if let (Some(user), Some(_)) = user_manager::create_user(username).await {
+                log!("Created user {}", user.user_id);
+            } else {
+                log!("Failed to create user");
+            }
+        }
+        ["user", "remove", username] => {
+            if let Some(user) = user_manager::get_user_by_username(username) {
+                user_manager::remove_user(user.user_id);
+                log!("Removed user {}", user.user_id);
+            } else {
+                log!("Failed to find user");
+            }
+        }
+        ["user", "list"] => {
+            let users: Vec<UserProfile> = user_manager::get_users();
+            for user in users {
+                let storage = file_util::get_designed_storage(user.user_id);
+                log!(
+                    "> Username: {}, ID: {}, created at: {}, storage: {}",
+                    user.username,
+                    user.user_id,
+                    user.created_at,
+                    storage
+                );
+            }
+        }
+        ["user", "info", username] => {
+            if let Some(user) = user_manager::get_user_by_username(username) {
+                user_manager::remove_user(user.user_id);
+                log!("Removed user {}", user.user_id);
+            } else {
+                log!("Failed to find user");
+            }
+        }
+        _ => {
+            log!("Unknown command");
+        }
     }
 }

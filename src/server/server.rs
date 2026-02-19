@@ -66,9 +66,9 @@ pub async fn start(port: u16) -> bool {
         let server_handle = server.handle();
         tx.send(server_handle).unwrap();
 
-        ACTIVE_TASKS.lock().unwrap().push("WebServer".into());
+        ACTIVE_TASKS.insert("WebServer".into());
         server.await.unwrap();
-        ACTIVE_TASKS.lock().unwrap().retain(|t| t != "WebServer");
+        ACTIVE_TASKS.remove("WebServer");
         log!("Web Server shutdown complete.");
     });
 
