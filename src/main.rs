@@ -76,7 +76,7 @@ async fn main() {
                 if ACTIVE_TASKS.lock().unwrap().is_empty() {
                     break;
                 }
-                sleep(Duration::from_secs(1)).await;
+                sleep(Duration::from_millis(100)).await;
             }
             println!(
                 "Please accept our Privacy Policy & Terms of Serivce before using Tensamin Services!"

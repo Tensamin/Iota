@@ -151,6 +151,9 @@ impl OmikronConnection {
         let sel_arc_clone = self.clone();
         tokio::spawn(async move {
             loop {
+                if *SHUTDOWN.read().await {
+                    break;
+                }
                 if !sel_arc_clone.is_connected().await {
                     break;
                 }

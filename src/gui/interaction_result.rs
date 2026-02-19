@@ -28,3 +28,22 @@ impl Debug for InteractionResult {
         }
     }
 }
+
+impl PartialEq for InteractionResult {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (
+                InteractionResult::OpenScreen { screen: _ },
+                InteractionResult::OpenScreen { screen: _ },
+            ) => true,
+            (
+                InteractionResult::OpenFutureScreen { screen: _ },
+                InteractionResult::OpenFutureScreen { screen: _ },
+            ) => true,
+            (InteractionResult::CloseScreen, InteractionResult::CloseScreen) => true,
+            (InteractionResult::Handled, InteractionResult::Handled) => true,
+            (InteractionResult::Unhandled, InteractionResult::Unhandled) => true,
+            _ => false,
+        }
+    }
+}

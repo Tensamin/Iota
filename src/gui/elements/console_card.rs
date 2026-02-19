@@ -1,42 +1,42 @@
-use crate::gui::elements::elements::{InteractableElement, JoinableElement};
-use crate::gui::interaction_result::InteractionResult;
-use crate::gui::util::borders::draw_block_joins;
-use crate::{APP_STATE, gui::elements::elements::Element};
-use crossterm::event::{KeyCode, KeyEvent};
+use actix_web::web::block;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     Frame,
-    layout::Rect,
+    layout::{Alignment, Constraint, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Wrap},
+    widgets::{Block, Borders, Paragraph},
+};
+
+use crate::gui::{
+    elements::elements::{Element, InteractableElement, JoinableElement},
+    interaction_result::InteractionResult,
+    util::borders::draw_block_joins,
 };
 use std::any::Any;
 
-#[derive(Clone)]
-pub struct UiLogEntry {
-    pub line: String,
-    pub color: Color,
-}
-
-pub struct LogCard {
+pub struct ConsoleCard {
     focused: bool,
-    scroll: u16,
+    pub title: String,
+    pub content: String,
 
-    pub borders: Borders,
-    pub joins: Borders,
+    borders: Borders,
+    joins: Borders,
 }
 
-impl LogCard {
-    pub fn new() -> Self {
-        Self {
+impl ConsoleCard {
+    pub fn new(title: &str, content: &str) -> Self {
+        ConsoleCard {
             focused: false,
-            scroll: 0,
+            title: title.to_string(),
+            content: content.to_string(),
             borders: Borders::ALL,
             joins: Borders::NONE,
         }
     }
 }
-impl Element for LogCard {
+
+impl Element for ConsoleCard {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -45,38 +45,31 @@ impl Element for LogCard {
         self
     }
 
-    fn render(&self, f: &mut Frame, area: Rect) {
-        let state = APP_STATE.lock().unwrap();
-        let logs = state.get_logs();
-
-        let lines: Vec<Line> = logs
-            .iter()
-            .map(|log| Line::from(Span::raw(log.line.clone())).style(log.color))
-            .collect();
-
+    fn render(&self, f: &mut Frame, r: Rect) {
         let block = Block::default()
-            .title(if self.focused {
-                "Logs J/K to scroll"
-            } else {
-                "Logs"
-            })
             .borders(self.borders)
+            .title(self.title.clone())
+            .title_style(Style::default().fg(Color::White))
             .border_style(if self.focused {
                 Style::default().fg(Color::Yellow)
             } else {
                 Style::default()
+            })
+            .style(if self.focused {
+                Style::default().fg(Color::White)
+            } else {
+                Style::default()
             });
 
-        let paragraph = Paragraph::new(lines)
+        let par = Paragraph::new(Line::from(Span::from(self.content.clone())))
             .block(block)
-            .wrap(Wrap { trim: false })
-            .scroll((self.scroll, 0));
-
-        f.render_widget(paragraph, area);
-        draw_block_joins(f, area, self.borders, self.joins);
+            .scroll((0, 0));
+        f.render_widget(par, r);
+        draw_block_joins(f, r, self.borders, self.joins);
     }
 }
-impl JoinableElement for LogCard {
+
+impl JoinableElement for ConsoleCard {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -101,7 +94,8 @@ impl JoinableElement for LogCard {
         self.joins = joins;
     }
 }
-impl InteractableElement for LogCard {
+
+impl InteractableElement for ConsoleCard {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -120,17 +114,22 @@ impl InteractableElement for LogCard {
 
     fn interact(&mut self, key: KeyEvent) -> InteractionResult {
         match key.code {
-            KeyCode::Char('J') | KeyCode::Char('j') => {
-                if self.scroll > 0 {
-                    self.scroll -= 1;
+            KeyCode::Enter => {
+                self.content = "".to_string();
+                InteractionResult::Handled
+            }
+            KeyCode::Backspace => {
+                self.content.pop();
+                InteractionResult::Handled
+            }
+            _ => {
+                if let Some(c) = key.code.as_char() {
+                    self.content.push(c);
+                    InteractionResult::Handled
+                } else {
+                    InteractionResult::Unhandled
                 }
-                InteractionResult::Handled
             }
-            KeyCode::Char('K') | KeyCode::Char('k') => {
-                self.scroll += 1;
-                InteractionResult::Handled
-            }
-            _ => InteractionResult::Unhandled,
         }
     }
 
