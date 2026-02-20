@@ -121,10 +121,6 @@ impl Screen for TermsUpdaterScreen {
         self
     }
 
-    fn get_ui(&self) -> &Arc<UI> {
-        &self.ui
-    }
-
     fn render(&self, f: &mut Frame, size: Rect) {
         let mut needed_height = 5;
 

@@ -40,7 +40,7 @@ pub static SHUTDOWN: Lazy<RwLock<bool>> = Lazy::new(|| RwLock::new(false));
 pub static RELOAD: Lazy<RwLock<bool>> = Lazy::new(|| RwLock::new(true));
 pub static ACTIVE_TASKS: Lazy<DashSet<String>> = Lazy::new(|| DashSet::new());
 
-#[tokio::main(flavor = "multi_thread", worker_threads = 8)]
+#[tokio::main(flavor = "multi_thread", worker_threads = 16)]
 #[allow(unused_must_use, dead_code)]
 async fn main() {
     while *RELOAD.read().await {
@@ -57,7 +57,7 @@ async fn main() {
                 if ACTIVE_TASKS.is_empty() {
                     break;
                 }
-                sleep(Duration::from_secs(1)).await;
+                sleep(Duration::from_millis(100)).await;
             }
             println!("You need to accept our End User Licence Agreement before launching!");
             println!("You can find this at 'agreements'!");
@@ -176,7 +176,7 @@ async fn main() {
                 if !omikron.is_connected().await {
                     break;
                 }
-                sleep(Duration::from_secs(1)).await;
+                sleep(Duration::from_millis(100)).await;
             }
         }
         if *RELOAD.read().await {

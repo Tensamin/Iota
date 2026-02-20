@@ -2,7 +2,7 @@ use std::{
     fs::{self, OpenOptions},
     io::Write,
     path::Path,
-    sync::{OnceLock, mpsc},
+    sync::{OnceLock, atomic::Ordering, mpsc},
     thread,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -122,9 +122,7 @@ pub fn log_internal_translated(
     args: Vec<String>,
 ) {
     if let Some(tx) = LOGGER.get() {
-        tokio::spawn(async move {
-            *UNIQUE.write().await = true;
-        });
+        UNIQUE.store(true, Ordering::Relaxed);
         let _ = tx.send(LogMessage {
             timestamp_ms: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -142,9 +140,7 @@ pub fn log_internal_translated(
 
 pub fn log_internal(kind: PrintType, prefix: String, is_error: bool, message: String) {
     if let Some(tx) = LOGGER.get() {
-        tokio::spawn(async move {
-            *UNIQUE.write().await = true;
-        });
+        UNIQUE.store(true, Ordering::Relaxed);
         let _ = tx.send(LogMessage {
             timestamp_ms: SystemTime::now()
                 .duration_since(UNIX_EPOCH)

@@ -9,16 +9,21 @@ use crossterm::event::KeyEvent;
 use once_cell::sync::Lazy;
 use ratatui::{Terminal, backend::CrosstermBackend, init};
 use std::{
+    collections::VecDeque,
     io::Stdout,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
     time::Duration,
 };
 use tokio::{sync::RwLock, time::Instant};
 
 /// UI state and rendering
-pub static UNIQUE: Lazy<RwLock<bool>> = Lazy::new(|| RwLock::new(true));
+pub static UNIQUE: AtomicBool = AtomicBool::new(true);
 
-pub static FPS: Lazy<RwLock<f64>> = Lazy::new(|| RwLock::new(0.0));
+pub static FPS: Lazy<RwLock<(f64, f64)>> = Lazy::new(|| RwLock::new((0.0, 0.0)));
+
 pub struct UI {
     pub terminal: Arc<Mutex<Terminal<CrosstermBackend<Stdout>>>>,
     screen: Arc<RwLock<Option<Box<dyn Screen>>>>,
@@ -27,26 +32,71 @@ pub struct UI {
 pub fn start_tui() -> Arc<UI> {
     let ui = Arc::new(UI::new());
     let uic = ui.clone();
+    ACTIVE_TASKS.insert("UI Renderer".to_string());
     tokio::spawn(async move {
-        ACTIVE_TASKS.insert("UI Renderer".to_string());
         let mut last_render = Instant::now();
-        let mut last: Vec<f64> = Vec::new();
+
+        let mut fps_samples: VecDeque<f64> = VecDeque::with_capacity(20);
+        let mut skip_samples: VecDeque<u16> = VecDeque::with_capacity(20);
+
+        let mut fps_sum = 0.0;
+        let mut skip_sum: u32 = 0;
+
+        let mut skipped = 0;
+
         loop {
             if *SHUTDOWN.read().await {
                 break;
             }
 
-            if *UNIQUE.read().await {
+            if skipped > 5 || UNIQUE.load(Ordering::Relaxed) {
                 uic.render().await;
+
+                skip_samples.push_back(skipped);
+                skip_sum += skipped as u32;
+
+                if skip_samples.len() > 20 {
+                    if let Some(old) = skip_samples.pop_front() {
+                        skip_sum -= old as u32;
+                    }
+                }
+
+                skipped = 0;
+
                 let elapsed = last_render.elapsed().as_secs_f64();
                 if elapsed > 0.0 {
-                    last.push(1.0 / elapsed);
+                    let fps = 1.0 / elapsed;
+
+                    fps_samples.push_back(fps);
+                    fps_sum += fps;
+
+                    if fps_samples.len() > 20 {
+                        if let Some(old) = fps_samples.pop_front() {
+                            fps_sum -= old;
+                        }
+                    }
                 }
-                if last.len() > 10 {
-                    last.remove(0);
-                }
-                *FPS.write().await = last.iter().sum::<f64>() / last.len() as f64;
+
+                let avg_fps = if !fps_samples.is_empty() {
+                    fps_sum / fps_samples.len() as f64
+                } else {
+                    0.0
+                };
+
+                let avg_skips_percentage = if !skip_samples.is_empty() {
+                    let avg_skipped = skip_sum as f64 / skip_samples.len() as f64;
+                    let total_iterations = avg_skipped + 1.0;
+                    (avg_skipped / total_iterations) * 100.0
+                } else {
+                    0.0
+                };
+
+                *FPS.write().await = (avg_fps, avg_skips_percentage);
+
                 last_render = Instant::now();
+                UNIQUE.store(false, Ordering::Relaxed);
+            } else {
+                skipped += 1;
             }
             tokio::time::sleep(Duration::from_millis(16)).await;
         }

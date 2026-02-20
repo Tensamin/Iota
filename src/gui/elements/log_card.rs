@@ -30,7 +30,7 @@ impl LogCard {
     pub fn new() -> Self {
         Self {
             focused: false,
-            scroll: 0,
+            scroll: 1,
             borders: Borders::ALL,
             joins: Borders::NONE,
         }
@@ -51,7 +51,9 @@ impl Element for LogCard {
 
         let lines: Vec<Line> = logs
             .iter()
-            .map(|log| Line::from(Span::raw(log.line.clone())).style(log.color))
+            .map(|log| {
+                Line::from(Span::raw(log.line.clone())).style(Style::default().fg(log.color))
+            })
             .collect();
 
         let block = Block::default()
@@ -67,10 +69,17 @@ impl Element for LogCard {
                 Style::default()
             });
 
+        let inner_height = area.height.saturating_sub(2) as usize;
+
+        let total_lines = lines.len();
+        let base_scroll = total_lines.saturating_sub(inner_height) as u16;
+
+        let scroll = base_scroll.saturating_sub(self.scroll);
+
         let paragraph = Paragraph::new(lines)
             .block(block)
             .wrap(Wrap { trim: false })
-            .scroll((self.scroll, 0));
+            .scroll((scroll, 0));
 
         f.render_widget(paragraph, area);
         draw_block_joins(f, area, self.borders, self.joins);
@@ -121,13 +130,17 @@ impl InteractableElement for LogCard {
     fn interact(&mut self, key: KeyEvent) -> InteractionResult {
         match key.code {
             KeyCode::Char('J') | KeyCode::Char('j') => {
-                if self.scroll > 0 {
-                    self.scroll -= 1;
+                let state = APP_STATE.lock().unwrap();
+                let logs = state.get_logs();
+                if self.scroll < logs.len() as u16 {
+                    self.scroll += 1;
                 }
                 InteractionResult::Handled
             }
             KeyCode::Char('K') | KeyCode::Char('k') => {
-                self.scroll += 1;
+                if self.scroll > 1 {
+                    self.scroll -= 1;
+                }
                 InteractionResult::Handled
             }
             _ => InteractionResult::Unhandled,

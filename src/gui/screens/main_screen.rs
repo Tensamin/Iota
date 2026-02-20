@@ -2,6 +2,7 @@ use crate::gui::{
     elements::{
         console_card::ConsoleCard,
         elements::{InteractableElement, JoinableElement},
+        graph_card::{GRAPHS, GraphCard},
         log_card::LogCard,
     },
     interaction_result::InteractionResult,
@@ -19,34 +20,49 @@ use ratatui::{
 use std::{any::Any, sync::Arc};
 
 pub struct MainScreen {
-    ui: Arc<UI>,
     elements: Vec<Box<dyn InteractableElement>>,
     nav_grid: Vec<Vec<Option<usize>>>,
     selected_coords: (usize, usize),
+    graphs_open: bool,
 }
 
 impl MainScreen {
     pub async fn new(ui: Arc<UI>) -> Self {
         let mut elements: Vec<Box<dyn InteractableElement>> = Vec::new();
-        let mut nav_grid: Vec<Vec<Option<usize>>> = Vec::new();
+
+        let nav_grid = vec![
+            vec![Some(0), Some(2)],
+            vec![Some(1), Some(3)],
+            vec![None, Some(4)],
+        ];
 
         let mut log_card = LogCard::new();
         log_card.set_borders(Borders::TOP.union(Borders::RIGHT).union(Borders::LEFT));
         let mut console_card = ConsoleCard::new("Console", "");
         console_card.set_joins(Borders::TOP);
+
         elements.push(Box::new(log_card));
         elements.push(Box::new(console_card));
 
-        nav_grid.push(vec![Some(0)]);
-        nav_grid.push(vec![Some(1)]);
+        let mut ram_graph = GraphCard::new(ui.clone(), GRAPHS::Ram, "RAM Usage".into());
+        ram_graph.set_borders(Borders::TOP.union(Borders::LEFT).union(Borders::RIGHT));
+        elements.push(Box::new(ram_graph));
+        let mut cpu_graph = GraphCard::new(ui.clone(), GRAPHS::Cpu, "CPU Usage".into());
+        cpu_graph.set_borders(Borders::TOP.union(Borders::LEFT).union(Borders::RIGHT));
+        cpu_graph.set_joins(Borders::TOP);
+        elements.push(Box::new(cpu_graph));
+        let mut ping_graph = GraphCard::new(ui.clone(), GRAPHS::Ping, "Ping".into());
+        ping_graph.set_joins(Borders::TOP);
+        elements.push(Box::new(ping_graph));
+
+        let graphs_open = true;
 
         let mut screen = MainScreen {
-            ui,
             elements,
             nav_grid,
             selected_coords: (1, 0),
+            graphs_open,
         };
-
         screen.focus_current();
         screen
     }
@@ -101,7 +117,6 @@ impl MainScreen {
             _ => {}
         }
 
-        // Clamp X to row length
         if let Some(row) = self.nav_grid.get(y) {
             if x >= row.len() {
                 x = row.len() - 1;
@@ -129,10 +144,6 @@ impl Screen for MainScreen {
         self
     }
 
-    fn get_ui(&self) -> &Arc<UI> {
-        &self.ui
-    }
-
     fn render(&self, f: &mut Frame, rect: Rect) {
         let main_block = Block::default().title("Main").borders(Borders::ALL);
         f.render_widget(main_block, rect);
@@ -142,14 +153,42 @@ impl Screen for MainScreen {
             horizontal: 1,
         });
 
-        let chunks = Layout::vertical([Constraint::Min(0), Constraint::Length(3)]).split(inner);
+        let graphs_width = if self.graphs_open { 30 } else { 2 };
+        let main_width = inner.width.saturating_sub(graphs_width);
+
+        let chunks = Layout::default()
+            .direction(ratatui::layout::Direction::Horizontal)
+            .constraints([
+                Constraint::Length(main_width),
+                Constraint::Length(graphs_width),
+            ])
+            .split(inner);
+        let left_chunks =
+            Layout::vertical([Constraint::Min(0), Constraint::Length(3)]).split(chunks[0]);
 
         if let Some(Some(index)) = self.nav_grid.get(0).and_then(|r| r.get(0)) {
-            self.elements[*index].as_element().render(f, chunks[0]);
+            self.elements[*index].as_element().render(f, left_chunks[0]);
+        }
+        if let Some(Some(index)) = self.nav_grid.get(1).and_then(|r| r.get(0)) {
+            self.elements[*index].as_element().render(f, left_chunks[1]);
         }
 
-        if let Some(Some(index)) = self.nav_grid.get(1).and_then(|r| r.get(0)) {
-            self.elements[*index].as_element().render(f, chunks[1]);
+        let graph_elements: Vec<_> = self
+            .elements
+            .iter()
+            .filter(|el| el.as_any().is::<GraphCard>())
+            .collect();
+
+        let graph_chunks = Layout::vertical(
+            graph_elements
+                .iter()
+                .map(|_| Constraint::Length(chunks[1].height / graph_elements.len() as u16))
+                .collect::<Vec<_>>(),
+        )
+        .split(chunks[1]);
+
+        for (el, area) in graph_elements.iter().zip(graph_chunks.iter()) {
+            el.as_element().render(f, *area);
         }
     }
 
@@ -159,6 +198,15 @@ impl Screen for MainScreen {
             KeyCode::Down => self.navigate(NavDirection::Down),
             KeyCode::Left => self.navigate(NavDirection::Left),
             KeyCode::Right => self.navigate(NavDirection::Right),
+            KeyCode::Enter | KeyCode::Char(' ') if self.selected_coords.1 == 1 => {
+                self.graphs_open = !self.graphs_open;
+                for element in self.elements.iter_mut() {
+                    if let Some(graph) = element.as_any_mut().downcast_mut::<GraphCard>() {
+                        graph.set_open(self.graphs_open);
+                    }
+                }
+                return InteractionResult::Handled;
+            }
             _ => {
                 let (y, x) = self.selected_coords;
                 if let Some(Some(index)) = self.nav_grid.get(y).and_then(|r| r.get(x)) {

@@ -3,6 +3,7 @@ use crate::gui::ui::{UI, UNIQUE};
 use crate::{RELOAD, SHUTDOWN};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, poll, read};
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 pub fn setup_input_handler(ui: Arc<UI>) {
@@ -30,7 +31,7 @@ pub fn setup_input_handler(ui: Arc<UI>) {
                             if key_event.kind == KeyEventKind::Press {
                                 let uic = ui.clone();
                                 handle_input(key_event, uic).await;
-                                *UNIQUE.write().await = true;
+                                UNIQUE.store(true, Ordering::Relaxed);
                             }
                         }
                     }

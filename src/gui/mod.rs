@@ -1,6 +1,7 @@
 pub mod elements {
     pub mod console_card;
     pub mod elements;
+    pub mod graph_card;
     pub mod log_card;
 }
 pub mod screens {

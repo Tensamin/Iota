@@ -1,5 +1,4 @@
 use crossterm::event::{KeyCode, KeyEvent};
-use json::JsonValue;
 use ratatui::{
     Frame,
     layout::Rect,
@@ -7,14 +6,15 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
 };
+use uuid::Uuid;
 
 use crate::{
-    ACTIVE_TASKS,
-    data::communication::{CommunicationType, CommunicationValue, DataTypes},
+    ACTIVE_TASKS, RELOAD, SHUTDOWN,
+    data::communication::{CommunicationType, CommunicationValue},
     gui::{
         elements::elements::{Element, InteractableElement, JoinableElement},
         interaction_result::InteractionResult,
-        ui::{FPS, UI},
+        ui::FPS,
         util::borders::draw_block_joins,
     },
     log, log_cv,
@@ -22,11 +22,7 @@ use crate::{
     users::{user_manager, user_profile::UserProfile},
     util::file_util,
 };
-use std::{
-    any::Any,
-    sync::Arc,
-    time::{Duration, SystemTime},
-};
+use std::{any::Any, time::Duration};
 
 pub struct ConsoleCard {
     focused: bool,
@@ -129,8 +125,12 @@ impl InteractableElement for ConsoleCard {
         match key.code {
             KeyCode::Enter => {
                 let command = self.content.clone();
+                let id = Uuid::new_v4();
+                let task_id = format!("command_{}_{}", command, id);
+                ACTIVE_TASKS.insert(task_id.clone());
                 tokio::spawn(async move {
                     run_command(&command).await;
+                    ACTIVE_TASKS.remove(&task_id);
                 });
                 self.content = "".to_string();
                 InteractionResult::Handled
@@ -171,66 +171,43 @@ pub async fn run_command(command: &str) {
         ["tasks"] => {
             let active_tasks: Vec<String> =
                 ACTIVE_TASKS.clone().iter().map(|v| v.to_string()).collect();
-            log!("Active tasks: {:?}", active_tasks);
+            let info = if *SHUTDOWN.read().await && *RELOAD.read().await {
+                "Rebooting, "
+            } else if *SHUTDOWN.read().await {
+                "Shutting , "
+            } else {
+                ""
+            };
+            log!("{}Active tasks: {:?}", info, active_tasks);
         }
         ["fps"] => {
-            log!("FPS: {}", *FPS.read().await);
+            let (fps, skips) = *FPS.read().await;
+            log!("{:.1} FPS with {:.1}% of attempts skipped", fps, skips);
         }
+
+        ["help"] => {
+            log!("Available commands: tasks, fps, ping, user");
+        }
+
+        ["help", "tasks"] => {
+            log!("Tasks command usage: tasks");
+        }
+        ["help", "fps"] => {
+            log!("FPS command usage: fps");
+        }
+        ["help", "ping"] => {
+            log!("Ping command usage: ping [time]");
+        }
+        ["help", "user"] => {
+            log!("User command usage: user add <username> | user remove <username> | user list");
+        }
+
         ["ping"] => {
-            let time = 20;
-
-            let now = SystemTime::now();
-
-            let conn = {
-                let guard = OMIKRON_CONNECTION.read().await;
-                guard.as_ref().cloned()
-            };
-
-            let conn = match conn {
-                Some(c) => c,
-                None => return,
-            };
-
-            let response_cv = conn
-                .await_response(
-                    &CommunicationValue::new(CommunicationType::ping),
-                    Some(Duration::from_secs(time)),
-                )
-                .await;
-
-            let elapsed = now.elapsed().unwrap_or(Duration::ZERO);
-
-            match response_cv {
-                Ok(response) => log_cv!(response.add_data(
-                    DataTypes::get_time,
-                    JsonValue::from(elapsed.as_millis() as i64)
-                )),
-                Err(err) => log!("Ping error: {:?}", err),
-            }
+            ping(20).await;
         }
         ["ping", time] => {
             let time = time.parse::<u64>().unwrap_or(20);
-
-            let conn = {
-                let guard = OMIKRON_CONNECTION.read().await;
-                guard.as_ref().cloned()
-            };
-
-            let conn = match conn {
-                Some(c) => c,
-                None => return,
-            };
-
-            let response_cv = conn
-                .await_response(
-                    &CommunicationValue::new(CommunicationType::ping),
-                    Some(Duration::from_secs(time)),
-                )
-                .await;
-            match response_cv {
-                Ok(response) => log_cv!(response),
-                Err(err) => log!("Ping error: {:?}", err),
-            }
+            ping(time).await;
         }
         ["user", "add", username] => {
             if let (Some(user), Some(_)) = user_manager::create_user(username).await {
@@ -271,5 +248,30 @@ pub async fn run_command(command: &str) {
         _ => {
             log!("Unknown command");
         }
+    }
+}
+
+pub async fn ping(time: u64) {
+    let time = time;
+
+    let conn = {
+        let guard = OMIKRON_CONNECTION.read().await;
+        guard.as_ref().cloned()
+    };
+
+    let conn = match conn {
+        Some(c) => c,
+        None => return,
+    };
+
+    let response_cv = conn
+        .await_response(
+            &CommunicationValue::new(CommunicationType::ping),
+            Some(Duration::from_secs(time)),
+        )
+        .await;
+    match response_cv {
+        Ok(response) => log_cv!(response),
+        Err(err) => log!("Ping error: {:?}", err),
     }
 }
