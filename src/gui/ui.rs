@@ -26,7 +26,7 @@ pub static FPS: Lazy<RwLock<(f64, f64)>> = Lazy::new(|| RwLock::new((0.0, 0.0)))
 
 pub struct UI {
     pub terminal: Arc<Mutex<Terminal<CrosstermBackend<Stdout>>>>,
-    screen: Arc<RwLock<Option<Box<dyn Screen>>>>,
+    screen_stack: Arc<RwLock<Vec<Box<dyn Screen>>>>,
 }
 
 pub fn start_tui() -> Arc<UI> {
@@ -111,18 +111,22 @@ impl UI {
         let terminal = init();
         Self {
             terminal: Arc::new(Mutex::new(terminal)),
-            screen: Arc::new(RwLock::new(None)),
+            screen_stack: Arc::new(RwLock::new(Vec::new())),
         }
     }
 
     pub async fn set_screen(&self, screen: Box<dyn Screen>) {
-        *self.screen.write().await = Some(screen);
+        self.screen_stack.write().await.push(screen);
     }
-
+    pub async fn replace_screen(&self, screen: Box<dyn Screen>) {
+        let mut stack = self.screen_stack.write().await;
+        stack.pop();
+        stack.push(screen);
+    }
     pub async fn handle_input(self: Arc<Self>, key_event: KeyEvent) {
         let result = {
-            let mut guard = self.screen.write().await;
-            if let Some(screen) = guard.as_mut() {
+            let mut stack = self.screen_stack.write().await;
+            if let Some(screen) = stack.last_mut() {
                 screen.handle_input(key_event)
             } else {
                 return;
@@ -138,7 +142,12 @@ impl UI {
                 ui.set_screen(screen).await;
             }
             InteractionResult::CloseScreen => {
-                *self.screen.write().await = None;
+                let mut stack = self.screen_stack.write().await;
+                stack.pop();
+
+                if stack.is_empty() {
+                    *SHUTDOWN.write().await = true;
+                }
             }
             InteractionResult::Handled => {}
             InteractionResult::Unhandled => {}
@@ -146,7 +155,7 @@ impl UI {
     }
 
     pub async fn render(&self) {
-        if let Some(screen) = self.screen.read().await.as_ref() {
+        if let Some(screen) = self.screen_stack.read().await.last() {
             let mut terminal = self.terminal.lock().unwrap();
             terminal
                 .draw(|f| {

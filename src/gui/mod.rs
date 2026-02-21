@@ -6,6 +6,7 @@ pub mod elements {
 }
 pub mod screens {
     pub mod main_screen;
+    pub mod md_viewer;
     pub mod screens;
     pub mod terms_checker;
     pub mod terms_updater;

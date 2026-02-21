@@ -5,12 +5,15 @@ use ratatui::{Frame, layout::Rect, widgets::Borders};
 
 use crate::gui::{interaction_result::InteractionResult, screens::screens::Screen};
 
+#[allow(unused)]
 pub trait Element: Send + Sync + Any {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
 
     fn render(&self, f: &mut Frame, r: Rect);
 }
+
+#[allow(unused)]
 pub trait JoinableElement: Send + Sync + Any {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
@@ -21,6 +24,7 @@ pub trait JoinableElement: Send + Sync + Any {
     fn set_joins(&mut self, joins: Borders);
 }
 
+#[allow(unused)]
 pub trait InfoElement: Send + Sync + Any {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
@@ -30,6 +34,7 @@ pub trait InfoElement: Send + Sync + Any {
     fn get_info_screen(&self) -> Box<dyn Screen>;
 }
 
+#[allow(unused)]
 pub trait InteractableElement: Send + Sync + Any {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;

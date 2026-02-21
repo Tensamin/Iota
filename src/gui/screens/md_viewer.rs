@@ -5,12 +5,11 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Wrap},
 };
-use std::{any::Any, sync::Arc, time::Duration};
+use std::{any::Any, time::Duration};
 
-use crate::gui::{interaction_result::InteractionResult, screens::screens::Screen, ui::UI};
+use crate::gui::{interaction_result::InteractionResult, screens::screens::Screen};
 
 pub struct FileViewer {
-    ui: Arc<UI>,
     title: String,
     text: Vec<DisplayLine>,
     scroll: u16,
@@ -23,10 +22,6 @@ impl Screen for FileViewer {
     }
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
-    }
-
-    fn get_ui(&self) -> &Arc<UI> {
-        &self.ui
     }
 
     fn render(&self, f: &mut Frame, rect: Rect) {
@@ -54,9 +49,8 @@ impl Screen for FileViewer {
 }
 
 impl FileViewer {
-    pub fn new(ui: Arc<UI>, title: String, content: &str) -> Self {
+    pub fn new(title: String, content: &str) -> Self {
         Self {
-            ui,
             title,
             text: parse_document(content.to_owned()),
             scroll: 0,

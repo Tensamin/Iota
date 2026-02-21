@@ -32,8 +32,8 @@ impl MainScreen {
 
         let nav_grid = vec![
             vec![Some(0), Some(2)],
-            vec![Some(1), Some(3)],
-            vec![None, Some(4)],
+            vec![Some(0), Some(3)],
+            vec![Some(1), Some(4)],
         ];
 
         let mut log_card = LogCard::new();
@@ -44,10 +44,10 @@ impl MainScreen {
         elements.push(Box::new(log_card));
         elements.push(Box::new(console_card));
 
-        let mut ram_graph = GraphCard::new(ui.clone(), GRAPHS::Ram, "RAM Usage".into());
+        let mut ram_graph = GraphCard::new(ui.clone(), GRAPHS::Ram, "RAM".into());
         ram_graph.set_borders(Borders::TOP.union(Borders::LEFT).union(Borders::RIGHT));
         elements.push(Box::new(ram_graph));
-        let mut cpu_graph = GraphCard::new(ui.clone(), GRAPHS::Cpu, "CPU Usage".into());
+        let mut cpu_graph = GraphCard::new(ui.clone(), GRAPHS::Cpu, "CPU".into());
         cpu_graph.set_borders(Borders::TOP.union(Borders::LEFT).union(Borders::RIGHT));
         cpu_graph.set_joins(Borders::TOP);
         elements.push(Box::new(cpu_graph));
@@ -87,51 +87,64 @@ impl MainScreen {
     }
 
     fn navigate(&mut self, direction: NavDirection) {
-        let (mut y, mut x) = self.selected_coords;
+        let (current_row, current_col) = self.selected_coords;
+        let current_element = self.nav_grid[current_row][current_col];
 
-        self.unfocus_current(y, x);
+        self.unfocus_current(current_row, current_col);
 
-        match direction {
-            NavDirection::Up => {
-                if y > 0 {
-                    y -= 1;
-                }
+        let (delta_row, delta_col) = match direction {
+            NavDirection::Up => (-1isize, 0),
+            NavDirection::Down => (1, 0),
+            NavDirection::Left => (0, -1),
+            NavDirection::Right => (0, 1),
+            _ => (0, 0),
+        };
+
+        let mut next_row = current_row as isize;
+        let mut next_col = current_col as isize;
+
+        loop {
+            next_row += delta_row;
+            next_col += delta_col;
+
+            if next_row < 0 || next_col < 0 {
+                self.selected_coords = (
+                    (next_row - delta_row) as usize,
+                    (next_col - delta_col) as usize,
+                );
+                break;
             }
-            NavDirection::Down => {
-                if y < self.nav_grid.len() - 1 {
-                    y += 1;
-                }
+            let next_row_u = next_row as usize;
+            let next_col_u = next_col as usize;
+
+            if next_row_u >= self.nav_grid.len() {
+                self.selected_coords = (
+                    (next_row - delta_row) as usize,
+                    (next_col - delta_col) as usize,
+                );
+                break;
             }
-            NavDirection::Left => {
-                if x > 0 {
-                    x -= 1;
+
+            if let Some(row) = self.nav_grid.get(next_row_u) {
+                if next_col_u >= row.len() {
+                    self.selected_coords = (
+                        (next_row - delta_row) as usize,
+                        (next_col - delta_col) as usize,
+                    );
+                    break;
                 }
-            }
-            NavDirection::Right => {
-                if let Some(row) = self.nav_grid.get(y) {
-                    if x < row.len() - 1 {
-                        x += 1;
+
+                if let Some(next_element) = row[next_col_u] {
+                    if Some(next_element) != current_element {
+                        self.selected_coords = (next_row_u, next_col_u);
+                        self.focus_current();
+                        return;
                     }
                 }
             }
-            _ => {}
         }
 
-        if let Some(row) = self.nav_grid.get(y) {
-            if x >= row.len() {
-                x = row.len() - 1;
-            }
-        }
-
-        if self
-            .nav_grid
-            .get(y)
-            .and_then(|r| r.get(x))
-            .map_or(false, |e| e.is_some())
-        {
-            self.selected_coords = (y, x);
-            self.focus_current();
-        }
+        self.focus_current();
     }
 }
 
@@ -156,21 +169,26 @@ impl Screen for MainScreen {
         let graphs_width = if self.graphs_open { 30 } else { 2 };
         let main_width = inner.width.saturating_sub(graphs_width);
 
-        let chunks = Layout::default()
+        let horizontal_chunks = Layout::default()
             .direction(ratatui::layout::Direction::Horizontal)
             .constraints([
                 Constraint::Length(main_width),
                 Constraint::Length(graphs_width),
             ])
             .split(inner);
-        let left_chunks =
-            Layout::vertical([Constraint::Min(0), Constraint::Length(3)]).split(chunks[0]);
 
-        if let Some(Some(index)) = self.nav_grid.get(0).and_then(|r| r.get(0)) {
-            self.elements[*index].as_element().render(f, left_chunks[0]);
+        let left_area = horizontal_chunks[0];
+        let right_area = horizontal_chunks[1];
+
+        let left_rows =
+            Layout::vertical([Constraint::Min(0), Constraint::Length(3)]).split(left_area);
+
+        if let Some(log) = self.elements.get(0) {
+            log.as_element().render(f, left_rows[0]);
         }
-        if let Some(Some(index)) = self.nav_grid.get(1).and_then(|r| r.get(0)) {
-            self.elements[*index].as_element().render(f, left_chunks[1]);
+
+        if let Some(console) = self.elements.get(1) {
+            console.as_element().render(f, left_rows[1]);
         }
 
         let graph_elements: Vec<_> = self
@@ -179,16 +197,18 @@ impl Screen for MainScreen {
             .filter(|el| el.as_any().is::<GraphCard>())
             .collect();
 
-        let graph_chunks = Layout::vertical(
-            graph_elements
-                .iter()
-                .map(|_| Constraint::Length(chunks[1].height / graph_elements.len() as u16))
-                .collect::<Vec<_>>(),
-        )
-        .split(chunks[1]);
+        if !graph_elements.is_empty() {
+            let graph_chunks = Layout::vertical(
+                graph_elements
+                    .iter()
+                    .map(|_| Constraint::Ratio(1, graph_elements.len() as u32))
+                    .collect::<Vec<_>>(),
+            )
+            .split(right_area);
 
-        for (el, area) in graph_elements.iter().zip(graph_chunks.iter()) {
-            el.as_element().render(f, *area);
+            for (el, area) in graph_elements.iter().zip(graph_chunks.iter()) {
+                el.as_element().render(f, *area);
+            }
         }
     }
 

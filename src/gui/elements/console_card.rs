@@ -124,8 +124,14 @@ impl InteractableElement for ConsoleCard {
     fn interact(&mut self, key: KeyEvent) -> InteractionResult {
         match key.code {
             KeyCode::Enter => {
+                if self.content.is_empty() {
+                    log!("");
+                    return InteractionResult::Handled;
+                }
                 let command = self.content.clone();
                 let id = Uuid::new_v4();
+                let id = id.to_string();
+                let id = id.split_at(8).0;
                 let task_id = format!("command_{}_{}", command, id);
                 ACTIVE_TASKS.insert(task_id.clone());
                 tokio::spawn(async move {

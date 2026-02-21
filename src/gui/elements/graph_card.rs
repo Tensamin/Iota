@@ -28,11 +28,19 @@ pub enum GRAPHS {
 }
 
 impl GRAPHS {
+    pub fn get_color(&self) -> Color {
+        match self {
+            GRAPHS::Ram => Color::Blue,
+            GRAPHS::Cpu => Color::Red,
+            GRAPHS::Ping => Color::Green,
+        }
+    }
+
     pub fn get_graph(&self) -> Vec<(f64, f64)> {
         match self {
-            GRAPHS::Ram => APP_STATE.lock().unwrap().ram.clone(),
-            GRAPHS::Cpu => APP_STATE.lock().unwrap().cpu.clone(),
-            GRAPHS::Ping => APP_STATE.lock().unwrap().ping.clone(),
+            GRAPHS::Ram => APP_STATE.lock().unwrap().with_width(28).ram.clone(),
+            GRAPHS::Cpu => APP_STATE.lock().unwrap().with_width(28).cpu.clone(),
+            GRAPHS::Ping => APP_STATE.lock().unwrap().with_width(28).ping.clone(),
         }
     }
 
@@ -45,13 +53,13 @@ impl GRAPHS {
     }
 }
 
+#[allow(unused)]
 pub struct GraphCard {
     ui: Arc<UI>,
     graph_type: GRAPHS,
 
     focused: bool,
     pub title: String,
-    color: Color,
 
     borders: Borders,
     joins: Borders,
@@ -66,10 +74,9 @@ impl GraphCard {
             graph_type,
             focused: false,
             title,
-            color: Color::White,
             borders: Borders::ALL,
             joins: Borders::NONE,
-            open: false,
+            open: true,
         }
     }
 
@@ -98,11 +105,11 @@ impl Element for GraphCard {
                 .filter(|y| *y > 0.0)
                 .min_by(|a, b| a.total_cmp(b))
                 .unwrap_or(0.0);
-            let max_y = graph.iter().map(|(_, y)| *y).fold(f64::MIN, f64::max);
+            let max_y = graph.iter().map(|(_, y)| *y).fold(-1.0, f64::max);
 
             let block = Block::default()
                 .title(format!(
-                    "─{}:─{}{}──{}/{}─MIN/MAX",
+                    "{}:─{}{}─{}min/{}max",
                     self.title,
                     graph.last().unwrap_or(&(0.0, 0.0)).1 as i64,
                     unit,
@@ -127,7 +134,7 @@ impl Element for GraphCard {
                             y1: 0.0,
                             x2: *x,
                             y2: *y,
-                            color: self.color,
+                            color: self.graph_type.get_color(),
                         });
                     }
                 });

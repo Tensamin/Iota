@@ -20,6 +20,7 @@ mod util;
 
 use crate::communities::community_manager;
 use crate::communities::interactables::registry;
+use crate::gui::app_state;
 use crate::gui::app_state::AppState;
 use crate::gui::screens::main_screen::MainScreen;
 use crate::gui::ui::start_tui;
@@ -78,6 +79,7 @@ async fn main() {
             println!("You can find this at 'agreements'!");
             return;
         }
+        app_state::setup();
 
         let main_screen = MainScreen::new(ui.clone()).await;
         ui.set_screen(Box::new(main_screen)).await;

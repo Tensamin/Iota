@@ -1,12 +1,14 @@
 use crate::{
-    gui::{interaction_result::InteractionResult, screens::screens::Screen, ui::UI},
+    gui::{
+        interaction_result::InteractionResult,
+        screens::{md_viewer::FileViewer, screens::Screen},
+    },
     terms::{
         buttons::{checkbox, draw_buttons},
         consent_state::{UpdateDecision, UserChoice},
         doc::Doc,
         focus::Focus,
-        md_viewer::FileViewer,
-        terms_getter::{Type, get_link, get_terms},
+        terms_getter::{Type, get_newest_link, get_terms},
     },
 };
 use chrono::{Local, TimeZone, Utc};
@@ -19,11 +21,9 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 use std::any::Any;
-use std::sync::Arc;
 use tokio::sync::oneshot;
 
 pub struct TermsUpdaterScreen {
-    ui: Arc<UI>,
     sender: Option<oneshot::Sender<UserChoice>>,
 
     eula_needed: bool,
@@ -48,7 +48,6 @@ pub struct TermsUpdaterScreen {
 }
 impl TermsUpdaterScreen {
     pub fn new(
-        ui: Arc<UI>,
         consent_eula: UpdateDecision,
         consent_tos: UpdateDecision,
         consent_pp: UpdateDecision,
@@ -87,7 +86,6 @@ impl TermsUpdaterScreen {
             || (pp_needed && !pp_future);
 
         Self {
-            ui,
             sender,
 
             eula_needed,
@@ -653,14 +651,10 @@ impl Screen for TermsUpdaterScreen {
                 };
 
                 if let Some(terms_type) = terms_type {
-                    let ui = self.ui.clone();
                     let fut = Box::pin(async move {
                         let content = get_terms(terms_type.clone()).await.unwrap();
-                        Box::new(FileViewer::new(
-                            ui.clone(),
-                            terms_type.to_string(),
-                            &content,
-                        )) as Box<dyn Screen>
+                        Box::new(FileViewer::new(terms_type.to_string(), &content))
+                            as Box<dyn Screen>
                     });
 
                     return InteractionResult::OpenFutureScreen { screen: fut };
@@ -670,15 +664,15 @@ impl Screen for TermsUpdaterScreen {
             }
             KeyCode::Char('l') | KeyCode::Char('L') => match self.focus {
                 Focus::Eula => {
-                    let _ = open::that(get_link(Type::EULA));
+                    let _ = open::that(get_newest_link(Type::EULA));
                     InteractionResult::Handled
                 }
                 Focus::Tos => {
-                    let _ = open::that(get_link(Type::TOS));
+                    let _ = open::that(get_newest_link(Type::TOS));
                     InteractionResult::Handled
                 }
                 Focus::Pp => {
-                    let _ = open::that(get_link(Type::PP));
+                    let _ = open::that(get_newest_link(Type::PP));
                     InteractionResult::Handled
                 }
                 _ => InteractionResult::Unhandled,

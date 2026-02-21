@@ -59,7 +59,7 @@ async fn ensure_initial_consent(ui: Arc<UI>, state: &mut ConsentState) -> Result
                 }
             }
 
-            &state.save_state();
+            let _ = &state.save_state();
             Ok(())
         }
         UserChoice::Deny => Err(()),
@@ -77,7 +77,6 @@ async fn ensure_updates(ui: Arc<UI>, state: &mut ConsentState) -> Result<(), ()>
     let (tx, rx) = oneshot::channel();
 
     ui.set_screen(Box::new(TermsUpdaterScreen::new(
-        ui.clone(),
         eula_update.clone(),
         tos_update.clone(),
         privacy_update.clone(),

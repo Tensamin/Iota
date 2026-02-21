@@ -1,10 +1,13 @@
 use crate::{
-    gui::{interaction_result::InteractionResult, screens::screens::Screen, ui::UI},
+    gui::{
+        interaction_result::InteractionResult,
+        screens::{md_viewer::FileViewer, screens::Screen},
+        ui::UI,
+    },
     terms::{
         buttons::{checkbox, draw_buttons},
         consent_state::UserChoice,
         focus::Focus,
-        md_viewer::FileViewer,
         terms_getter::{Type, get_link, get_terms},
     },
 };
@@ -279,12 +282,11 @@ impl Screen for TermsCheckerScreen {
                     _ => None,
                 };
                 if let Some(terms_type) = terms_type {
-                    let ui = self.ui.clone();
                     let fut: Pin<Box<dyn Future<Output = Box<dyn Screen>> + Send>> =
                         Box::pin(async move {
                             let content = get_terms(terms_type.clone()).await.unwrap();
                             let screen: FileViewer =
-                                FileViewer::new(ui.clone(), terms_type.to_string(), &content);
+                                FileViewer::new(terms_type.to_string(), &content);
                             Box::new(screen) as Box<dyn Screen>
                         });
                     InteractionResult::OpenFutureScreen { screen: fut }

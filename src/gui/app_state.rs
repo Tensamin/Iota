@@ -1,6 +1,7 @@
-use crate::gui::elements::log_card::UiLogEntry;
+use crate::{ACTIVE_TASKS, APP_STATE, SHUTDOWN, gui::elements::log_card::UiLogEntry};
 use json::{JsonValue, object};
-use std::collections::VecDeque;
+use std::{collections::VecDeque, thread, time::Duration};
+use sysinfo::{RefreshKind, System};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -137,4 +138,64 @@ impl AppState {
             result
         }
     }
+}
+
+pub fn setup() {
+    ACTIVE_TASKS.insert("System info loader".to_string());
+    tokio::spawn(async move {
+        let mut sys = System::new_with_specifics(RefreshKind::new());
+        let mut last_total_received = 0u64;
+        let mut last_total_transmitted = 0u64;
+        let mut counter = 0.0;
+        loop {
+            if *SHUTDOWN.read().await {
+                break;
+            }
+            sys.refresh_all();
+
+            let mut tcpu = 0;
+            for cpu in sys.cpus() {
+                tcpu += cpu.cpu_usage() as i64;
+                tcpu /= 2;
+            }
+            let ram = (sys.used_memory() as f64 / sys.total_memory() as f64) * 100.0;
+
+            let total_received = 0u64;
+            let total_transmitted = 0u64;
+
+            let delta_received = if last_total_received == 0 {
+                0
+            } else {
+                total_received.saturating_sub(last_total_received)
+            };
+            let delta_transmitted = if last_total_transmitted == 0 {
+                0
+            } else {
+                total_transmitted.saturating_sub(last_total_transmitted)
+            };
+            last_total_received = total_received;
+            last_total_transmitted = total_transmitted;
+
+            let net_down = delta_received as f64;
+            let net_up = delta_transmitted as f64;
+
+            {
+                let mut st = APP_STATE.lock().unwrap();
+                st.push_cpu((counter, tcpu as f64));
+                st.push_ram((counter, ram));
+                st.push_net_down((counter, net_down));
+                st.push_net_up((counter, net_up));
+
+                st.sys_info = format!("NetDown: {}  NetUp: {}", delta_received, delta_transmitted);
+            }
+
+            counter += 1.0;
+            if counter > 30.0 {
+                thread::sleep(Duration::from_millis(500));
+            } else {
+                thread::sleep(Duration::from_millis(5));
+            }
+        }
+        ACTIVE_TASKS.remove("System info loader");
+    });
 }
