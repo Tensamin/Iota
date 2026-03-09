@@ -1,4 +1,5 @@
 use crossterm::event::{KeyCode, KeyEvent};
+use epsilon_core::{CommunicationType, CommunicationValue};
 use ratatui::{
     Frame,
     layout::Rect,
@@ -10,7 +11,6 @@ use uuid::Uuid;
 
 use crate::{
     ACTIVE_TASKS, RELOAD, SHUTDOWN,
-    data::communication::{CommunicationType, CommunicationValue},
     gui::{
         elements::elements::{Element, InteractableElement, JoinableElement},
         interaction_result::InteractionResult,
@@ -260,15 +260,7 @@ pub async fn run_command(command: &str) {
 pub async fn ping(time: u64) {
     let time = time;
 
-    let conn = {
-        let guard = OMIKRON_CONNECTION.read().await;
-        guard.as_ref().cloned()
-    };
-
-    let conn = match conn {
-        Some(c) => c,
-        None => return,
-    };
+    let conn = OMIKRON_CONNECTION.clone();
 
     let response_cv = conn
         .await_response(

@@ -4,7 +4,6 @@ use crate::communities::perms::permission::Permission;
 use crate::communities::{
     community_connection::CommunityConnection, interactables::interactable::Interactable,
 };
-use crate::data::communication::{CommunicationType, CommunicationValue};
 use crate::util::file_util;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use json::JsonValue;

@@ -1,7 +1,6 @@
 use crate::auth::auth_user::AuthUser;
 use crate::communities::community::Community;
 use crate::communities::interactables::interactable::Interactable;
-use crate::data::communication::{CommunicationType, CommunicationValue, DataTypes};
 use crate::users::user_manager::get_user;
 use aes_gcm::{Aes256Gcm, KeyInit, Nonce, aead::Aead};
 use base64::{Engine as _, engine::general_purpose::STANDARD};

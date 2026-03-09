@@ -3,11 +3,11 @@ use crate::{
         community::Community, community_connection::CommunityConnection,
         interactables::interactable::Interactable,
     },
-    data::communication::{CommunicationType, CommunicationValue, DataTypes},
     log,
     util::file_util::{get_children, load_file, save_file},
 };
 use async_trait::async_trait;
+use epsilon_core::{CommunicationType, CommunicationValue, DataTypes};
 use json::{JsonValue, array, object};
 use std::fs;
 use std::sync::Arc;
@@ -190,9 +190,9 @@ impl Interactable for TextChat {
         JsonValue::new_object()
     }
     async fn run_function(&self, cv: CommunicationValue) -> CommunicationValue {
-        let payload = cv.get_data(DataTypes::payload).unwrap();
-        if cv.get_data(DataTypes::function).unwrap().as_str().unwrap() == "get_messages" {
-            let amount = payload["amount"].as_i64().unwrap();
+        let payload = cv.get_data(DataTypes::payload).as_container().unwrap();
+        if cv.get_data(DataTypes::function).as_str().unwrap() == "get_messages" {
+            let amount = payload.get(DataTypes::amount).as_i64().unwrap();
             let loaded_messages = payload["loaded_messages"].as_i64().unwrap();
             let messages = self.get_messages(loaded_messages, amount).clone();
             let mut payload = JsonValue::new_object();

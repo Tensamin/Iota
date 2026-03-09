@@ -1,5 +1,4 @@
-use crate::data::communication::{CommunicationType, CommunicationValue, DataTypes};
-use crate::omikron::omikron_connection::{OMIKRON_CONNECTION, OmikronConnection};
+use crate::omikron::omikron_connection::OMIKRON_CONNECTION;
 use crate::users::user_profile::UserProfile;
 use crate::util::crypto_helper::{self, public_key_to_base64};
 use crate::util::file_util::{load_file, save_file};
@@ -7,16 +6,16 @@ use crate::util::logger::PrintType;
 use crate::{RELOAD, SHUTDOWN};
 use crate::{log, log_cv};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+use epsilon_core::{CommunicationType, CommunicationValue, DataTypes, DataValue};
 use hex::{self};
 use json::JsonValue;
-use json::number::Number;
 use once_cell::sync::Lazy;
 use rand::Rng;
 use rand_core::OsRng;
 use rand_core::RngCore;
 use sha2::{Digest, Sha256};
 use std::io::{self};
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use std::time::Duration;
 use x448::{PublicKey, Secret};
 
@@ -52,15 +51,7 @@ pub async fn load_from_tu(username: &str) -> Result<(), ()> {
 pub async fn create_user(username: &str) -> (Option<UserProfile>, Option<String>) {
     let register_cv = CommunicationValue::new(CommunicationType::get_register);
 
-    let conn = {
-        let guard = OMIKRON_CONNECTION.read().await;
-        guard.as_ref().cloned()
-    };
-
-    let conn = match conn {
-        Some(c) => c,
-        None => return (None, None),
-    };
+    let conn = OMIKRON_CONNECTION.clone();
 
     let response_cv = match conn
         .await_response(&register_cv, Some(Duration::from_secs(20)))
@@ -71,11 +62,7 @@ pub async fn create_user(username: &str) -> (Option<UserProfile>, Option<String>
     };
     log_cv!(PrintType::Omega, response_cv);
 
-    let user_id = match response_cv
-        .get_data(DataTypes::user_id)
-        .unwrap_or(&JsonValue::Null)
-        .as_i64()
-    {
+    let user_id = match response_cv.get_data(DataTypes::user_id).as_number() {
         Some(id) => id,
         None => return (None, None),
     };
@@ -104,24 +91,14 @@ pub async fn create_user(username: &str) -> (Option<UserProfile>, Option<String>
     );
 
     let cv = CommunicationValue::new(CommunicationType::complete_register_user)
-        .add_data(DataTypes::user_id, JsonValue::Number(Number::from(user_id)))
-        .add_data(DataTypes::username, JsonValue::String(username.to_string()))
+        .add_data(DataTypes::user_id, DataValue::Number(user_id))
+        .add_data(DataTypes::username, DataValue::Str(username.to_string()))
         .add_data(
             DataTypes::public_key,
-            JsonValue::String(public_key_to_base64(&public_key)),
+            DataValue::Str(public_key_to_base64(&public_key)),
         )
-        .add_data(DataTypes::iota_id, JsonValue::Number(Number::from(user_id)))
-        .add_data(DataTypes::reset_token, JsonValue::String(reset_token));
-
-    let conn = {
-        let guard = OMIKRON_CONNECTION.read().await;
-        guard.as_ref().cloned()
-    };
-
-    let conn = match conn {
-        Some(c) => c,
-        None => return (None, None),
-    };
+        .add_data(DataTypes::iota_id, DataValue::Number(user_id))
+        .add_data(DataTypes::reset_token, DataValue::Str(reset_token));
 
     let response_cv = conn
         .await_response(&cv, Some(Duration::from_secs(20)))

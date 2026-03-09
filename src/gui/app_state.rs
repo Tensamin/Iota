@@ -143,7 +143,7 @@ impl AppState {
 pub fn setup() {
     ACTIVE_TASKS.insert("System info loader".to_string());
     tokio::spawn(async move {
-        let mut sys = System::new_with_specifics(RefreshKind::new());
+        let mut sys = System::new_with_specifics(RefreshKind::everything());
         let mut last_total_received = 0u64;
         let mut last_total_transmitted = 0u64;
         let mut counter = 0.0;

@@ -1,47 +1,40 @@
 use crate::APP_STATE;
-use crate::data::communication::{CommunicationType, CommunicationValue, DataTypes};
 use crate::omikron::omikron_connection::OmikronConnection;
-use json::number::Number;
-use tokio::time::Instant;
-use uuid::Uuid;
+use dashmap::DashMap;
+use epsilon_core::{CommunicationType, CommunicationValue, DataTypes, DataValue, rand_u32};
+use std::sync::LazyLock;
+use std::time::Instant;
+use tokio::time::Duration;
+
+// Dedicated lightweight ping tracking
+static PING_TIMES: LazyLock<DashMap<u32, Instant>> = LazyLock::new(|| DashMap::new());
 
 impl OmikronConnection {
     pub async fn send_ping(&self) {
-        let uuid = Uuid::new_v4();
-        let send_time = Instant::now();
+        let id = rand_u32();
 
-        self.message_send_times.lock().await.insert(uuid, send_time);
-        self.send_ping_message(uuid).await;
-    }
+        PING_TIMES.insert(id, Instant::now());
 
-    pub async fn send_ping_message(&self, uuid: Uuid) {
+        // Auto-cleanup old pings (optional)
+        PING_TIMES.retain(|_, v| v.elapsed() < Duration::from_secs(30));
+
         let ping_message = CommunicationValue::new(CommunicationType::ping)
-            .with_id(uuid)
-            .add_data_num(
+            .with_id(id)
+            .add_data(
                 DataTypes::last_ping,
-                Number::from(*self.last_ping.lock().await),
+                DataValue::Number(*self.last_ping.lock().await),
             );
 
         self.send_message(&ping_message).await;
     }
 
-    /// Handles incoming pong and calculates latency
-    pub async fn handle_pong(&self, cv: &CommunicationValue, log: bool) {
+    pub async fn handle_pong(&self, cv: &CommunicationValue) {
         let id = cv.get_id();
-        let send_time_opt = {
-            let queue = self.message_send_times.lock().await;
-            queue.get(&id).cloned()
-        };
 
-        if let Some(send_time) = send_time_opt {
-            let ping = Instant::now().duration_since(send_time).as_millis() as i64;
-            self.message_send_times.lock().await.remove(&id);
-
-            *self.last_ping.lock().await = ping as i64;
-
-            if log {
-                APP_STATE.lock().unwrap().push_ping_val(ping as f64);
-            }
+        if let Some((_, send_time)) = PING_TIMES.remove(&id) {
+            let ping_ms = Instant::now().duration_since(send_time).as_millis() as i64;
+            *self.last_ping.lock().await = ping_ms;
+            APP_STATE.lock().unwrap().push_ping_val(ping_ms as f64);
         }
     }
 }

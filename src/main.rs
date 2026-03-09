@@ -8,25 +8,19 @@ use tokio::sync::RwLock;
 use tokio::time::{Duration, sleep};
 
 mod auth;
-mod communities;
-mod data;
 mod gui;
 mod langu;
 mod omikron;
-mod server;
 mod terms;
 mod users;
 mod util;
 
-use crate::communities::community_manager;
-use crate::communities::interactables::registry;
 use crate::gui::app_state;
 use crate::gui::app_state::AppState;
 use crate::gui::screens::main_screen::MainScreen;
 use crate::gui::ui::start_tui;
 use crate::langu::language_creator;
 use crate::omikron::omikron_connection::{OMIKRON_CONNECTION, OmikronConnection};
-use crate::server::server::start;
 use crate::terms::consent_state;
 use crate::users::user_manager;
 use crate::util::config_util::CONFIG;
@@ -119,7 +113,7 @@ async fn main() {
         log!("User IDS: {}", sb);
 
         // COMMUNITY MANAGEMENT
-        registry::load_interactables().await;
+        /*        registry::load_interactables().await;
         community_manager::load_communities().await;
         community_manager::save_communities().await;
         let mut sb1 = "".to_string();
@@ -131,7 +125,7 @@ async fn main() {
             sb1.remove(0);
             sb1 = sb1 + ",";
         }
-        log!("Community IDS: {}", sb1);
+        log!("Community IDS: {}", sb1); */
         let port = CONFIG.read().await.get_port();
         let mut ip = "0.0.0.0".to_string();
         for iface in pnet::datalink::interfaces() {
@@ -144,6 +138,7 @@ async fn main() {
                 }
             }
         }
+        /*
         if start(port).await {
             log_t!("community_active", ip, port.to_string());
         } else {
@@ -152,7 +147,7 @@ async fn main() {
             } else {
                 log_t!("community_start_error", port.to_string());
             }
-        }
+        } */
         if !has_dir("web") {
             download_and_extract_zip(
                 "https://omega.tensamin.net/api/download/iota_frontend",
@@ -160,26 +155,16 @@ async fn main() {
             )
             .await;
         }
+        let omikron: Arc<OmikronConnection> = Arc::new(OmikronConnection::new());
+        omikron.connect().await;
+
+        log_t!("setup_completed");
         loop {
             if *SHUTDOWN.read().await {
                 break;
             }
-            let omikron: Arc<OmikronConnection> = Arc::new(OmikronConnection::new());
-            omikron.connect().await;
-            {
-                let mut omikron_connection = OMIKRON_CONNECTION.write().await;
-                *omikron_connection = Some(omikron.clone());
-            }
-            log_t!("setup_completed");
-            loop {
-                if *SHUTDOWN.read().await {
-                    break;
-                }
-                if !omikron.is_connected().await {
-                    break;
-                }
-                sleep(Duration::from_millis(100)).await;
-            }
+
+            sleep(Duration::from_millis(100)).await;
         }
         if *RELOAD.read().await {
             loop {
@@ -190,7 +175,7 @@ async fn main() {
             }
             &CONFIG.write().await.clear();
             user_manager::clear();
-            community_manager::clear();
+            /*community_manager::clear();*/
             *APP_STATE.lock().unwrap() = AppState::new();
         }
         ui.terminal.lock().unwrap().clear();

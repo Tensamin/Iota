@@ -1,7 +1,4 @@
-use crate::{
-    communities::{community::Community, interactables::interactable::Interactable},
-    data::communication::{CommunicationType, CommunicationValue, DataTypes},
-};
+use crate::communities::{community::Community, interactables::interactable::Interactable};
 use async_trait::async_trait;
 use json::JsonValue;
 use std::sync::Arc;
