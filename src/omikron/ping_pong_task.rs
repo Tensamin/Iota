@@ -22,7 +22,7 @@ impl OmikronConnection {
             .with_id(id)
             .add_data(
                 DataTypes::last_ping,
-                DataValue::Number(*self.last_ping.lock().await),
+                DataValue::Array(vec![DataValue::Number(*self.last_ping.lock().await)]),
             );
 
         self.send_message(&ping_message).await;

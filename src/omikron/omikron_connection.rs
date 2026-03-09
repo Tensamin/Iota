@@ -6,7 +6,7 @@ use crate::util::crypto_util::{DataFormat, SecurePayload};
 use crate::util::file_util::{get_children, load_file, save_file};
 use crate::util::{chat_files, chats_util};
 use crate::util::{config_util::CONFIG, crypto_helper};
-use crate::{ACTIVE_TASKS, SHUTDOWN, log, log_cv_in, log_t};
+use crate::{ACTIVE_TASKS, SHUTDOWN, log, log_cv_in, log_cv_out, log_t};
 use dashmap::DashMap;
 use epsilon_core::{CommunicationType, CommunicationValue, DataTypes, DataValue};
 use epsilon_native::{Receiver, Sender};
@@ -28,7 +28,7 @@ const OMIKRON_PORT_DEFAULT: u16 = 959;
 const RECONNECT_DELAY: Duration = Duration::from_secs(5);
 const MAX_RECONNECT_DELAY: Duration = Duration::from_secs(300);
 const CONNECTION_TIMEOUT: Duration = Duration::from_secs(10);
-const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(10);
+const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
 const TASK_CLEANUP_INTERVAL: Duration = Duration::from_secs(60);
 const TASK_MAX_AGE: Duration = Duration::from_secs(60);
 
@@ -282,6 +282,7 @@ impl OmikronConnection {
 
         if iota_id == 0 || public_key.is_none() || private_key.is_none() {
             log_t!("iota_register_new");
+
             let key_pair = crypto_helper::generate_keypair();
             let public_key_base64 = crypto_helper::public_key_to_base64(&key_pair.public);
             let private_key_base64 = crypto_helper::secret_key_to_base64(&key_pair.secret);
@@ -351,12 +352,20 @@ impl OmikronConnection {
                     self.clone().handle_message(cv).await;
                 }
                 Err(e) => {
-                    log!("Receive error: {}", e);
+                    log!(
+                        "Receive error: {} connection_id={} receiver_open={}",
+                        e,
+                        self.connection_id,
+                        receiver.is_open()
+                    );
                     break;
                 }
             }
             if !receiver.is_open() {
-                log!("Connection closed ");
+                log!(
+                    "Connection closed connection_id={} receiver_open=false",
+                    self.connection_id
+                );
                 break;
             }
         }
@@ -387,7 +396,9 @@ impl OmikronConnection {
     // -------------------------------------------------------------------------
 
     pub async fn handle_message(self: Arc<Self>, cv: CommunicationValue) {
-        log_cv_in!(&cv);
+        if !cv.is_type(CommunicationType::ping) && !cv.is_type(CommunicationType::pong) {
+            log_cv_in!(&cv);
+        }
 
         let msg_id = cv.get_id();
 
@@ -436,7 +447,6 @@ impl OmikronConnection {
 
         if cv.is_type(CommunicationType::identification_response) {
             if let Some(accepted) = cv.get_data(DataTypes::accepted).as_bool() {
-                log!("Omikron connected: {}", accepted.to_string());
                 let mut state = self.state.write().await;
                 if let ConnectionState::Connected { identified: _ } = *state {
                     *state = ConnectionState::Connected { identified: true };
@@ -771,16 +781,13 @@ impl OmikronConnection {
         };
 
         if let Some(decrypted) = solved_challenge {
+            let solved = decrypted.export(DataFormat::Raw);
+
             let response = CommunicationValue::new(CommunicationType::challenge_response)
                 .with_id(cv.get_id())
-                .add_data(
-                    DataTypes::challenge,
-                    DataValue::Str(decrypted.export(DataFormat::Base64)),
-                );
+                .add_data(DataTypes::challenge, DataValue::Str(solved));
 
             self.send_message(&response).await;
-        } else {
-            log!("Failed to decrypt challenge");
         }
     }
 
@@ -803,6 +810,9 @@ impl OmikronConnection {
             let sender_clone = Arc::clone(sender);
             drop(sender_guard);
 
+            if !cv.is_type(CommunicationType::ping) && !cv.is_type(CommunicationType::pong) {
+                log_cv_out!(&cv);
+            }
             if let Err(e) = sender_clone.send(cv).await {
                 log_t!("send_message_failed", e.to_string());
             }
