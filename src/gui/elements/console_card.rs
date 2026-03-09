@@ -251,6 +251,15 @@ pub async fn run_command(command: &str) {
                 log!("Failed to find user");
             }
         }
+        ["reload"] | ["restart"] => {
+            log!("Restarting");
+            *RELOAD.write().await = true;
+            *SHUTDOWN.write().await = true;
+        }
+        ["shutdown"] | ["stop"] => {
+            log!("Shutting down");
+            *SHUTDOWN.write().await = true;
+        }
         _ => {
             log!("Unknown command");
         }
