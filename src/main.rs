@@ -20,7 +20,7 @@ use crate::gui::app_state::AppState;
 use crate::gui::screens::main_screen::MainScreen;
 use crate::gui::ui::start_tui;
 use crate::langu::language_creator;
-use crate::omikron::omikron_connection::{OMIKRON_CONNECTION, OmikronConnection};
+use crate::omikron::omikron_connection::OmikronConnection;
 use crate::terms::consent_state;
 use crate::users::user_manager;
 use crate::util::config_util::CONFIG;

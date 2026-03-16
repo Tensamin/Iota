@@ -1,9 +1,8 @@
-use crate::util::file_util::{get_children, get_directory, load_file, save_file};
-use json::{self, JsonValue, array, object};
-use std::fs::{self};
-use std::path::Path;
-
 use crate::log;
+use crate::util::file_util::get_directory;
+use json::{JsonValue, array, object};
+use rusqlite::{Connection, params};
+use std::io;
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum MessageState {
@@ -22,14 +21,16 @@ impl MessageState {
             MessageState::Sending => "sending",
         }
     }
-    pub fn from_str(str: &str) -> Self {
-        match str.to_uppercase().as_str() {
+
+    pub fn from_str(value: &str) -> Self {
+        match value.to_lowercase().as_str() {
             "read" => MessageState::Read,
             "received" => MessageState::Received,
             "sent" => MessageState::Sent,
             _ => MessageState::Sending,
         }
     }
+
     pub fn upgrade(self, other: Self) -> Self {
         if other == Self::Read || self == Self::Read {
             Self::Read
@@ -43,6 +44,34 @@ impl MessageState {
     }
 }
 
+fn db_path() -> String {
+    format!("{}/messages.sqlite3", get_directory())
+}
+
+fn open_db() -> rusqlite::Result<Connection> {
+    let conn = Connection::open(db_path())?;
+    conn.execute_batch(
+        r#"
+        PRAGMA journal_mode = WAL;
+        PRAGMA synchronous = NORMAL;
+
+        CREATE TABLE IF NOT EXISTS messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            storage_owner INTEGER NOT NULL,
+            external_user INTEGER NOT NULL,
+            message_time INTEGER NOT NULL,
+            content TEXT NOT NULL,
+            sent_by_self INTEGER NOT NULL,
+            message_state TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_messages_lookup
+            ON messages (storage_owner, external_user, message_time DESC);
+        "#,
+    )?;
+    Ok(conn)
+}
+
 pub fn add_message(
     send_time: u128,
     storage_owner_is_sender: bool,
@@ -50,109 +79,103 @@ pub fn add_message(
     external_user: i64,
     message: &str,
 ) {
-    let user_dir = format!(
-        "{}/users/{}/chats/{}",
-        get_directory(),
-        storage_owner,
-        external_user
-    );
-
-    if let Err(e) = fs::create_dir_all(&user_dir) {
-        log!("Failed to create chat directory: {}", e);
-        return;
-    }
-
-    let mut chunk_index = 0;
-    let mut message_chunk = array![];
-
-    // find latest chunk not full (max 800 msgs)
-    loop {
-        let file_name = format!("msgs_{}.json", chunk_index);
-        let file_content = load_file(&user_dir, &file_name);
-
-        if !file_content.is_empty() {
-            if let Ok(current_chunk) = json::parse(&file_content) {
-                if current_chunk.is_array() && current_chunk.len() < 800 {
-                    message_chunk = current_chunk;
-                    break;
-                }
-            } else {
-                log!("Failed to parse existing JSON file: {}", file_name);
-            }
-        } else {
-            break;
-        }
-
-        chunk_index += 1;
-        if chunk_index > 1000 {
-            log!("Too many message chunks. Aborting add.");
+    let message_time = match i64::try_from(send_time) {
+        Ok(v) => v,
+        Err(_) => {
+            log!("Failed to store message: send_time out of range for i64 ({send_time})");
             return;
         }
-    }
-
-    let json_obj = object! {
-        "timestamp" => send_time as i64,
-        "content" => message,
-        "sent_by_self" => storage_owner_is_sender,
-        "message_state" => MessageState::Sending.as_str()
     };
 
-    if let Err(e) = message_chunk.push(json_obj) {
-        log!("Failed to push new message into JSON array: {}", e);
-        return;
-    }
+    let conn = match open_db() {
+        Ok(c) => c,
+        Err(e) => {
+            log!("Failed to open sqlite db for add_message: {}", e);
+            return;
+        }
+    };
 
-    let file_name = format!("msgs_{}.json", chunk_index);
-    save_file(&user_dir, &file_name, &message_chunk.dump());
+    if let Err(e) = conn.execute(
+        r#"
+        INSERT INTO messages (
+            storage_owner,
+            external_user,
+            message_time,
+            content,
+            sent_by_self,
+            message_state
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+        "#,
+        params![
+            storage_owner,
+            external_user,
+            message_time,
+            message,
+            if storage_owner_is_sender {
+                1_i64
+            } else {
+                0_i64
+            },
+            MessageState::Sending.as_str(),
+        ],
+    ) {
+        log!("Failed to insert message into sqlite: {}", e);
+    }
 }
+
 pub fn change_message_state(
     timestamp: i64,
     storage_owner: i64,
     external_user: i64,
     new_state: MessageState,
-) -> std::io::Result<()> {
-    let user_dir = format!("users/{}/chats/{}", storage_owner, external_user);
-    let path = Path::new(&user_dir);
+) -> io::Result<()> {
+    let conn = open_db().map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
 
-    if !path.exists() {
+    let current: Option<String> = match conn.query_row(
+        r#"
+        SELECT message_state
+        FROM messages
+        WHERE storage_owner = ?1
+          AND external_user = ?2
+          AND message_time = ?3
+        ORDER BY id DESC
+        LIMIT 1
+        "#,
+        params![storage_owner, external_user, timestamp],
+        |row| row.get(0),
+    ) {
+        Ok(state) => Some(state),
+        Err(rusqlite::Error::QueryReturnedNoRows) => None,
+        Err(e) => return Err(io::Error::new(io::ErrorKind::Other, e.to_string())),
+    };
+
+    let Some(current_state_raw) = current else {
         return Ok(());
-    }
+    };
 
-    let entries = fs::read_dir(path)?;
-    for entry in entries {
-        let entry = entry?;
-        let fname = entry.file_name();
-        let fname_str = fname.to_string_lossy();
+    let upgraded = MessageState::from_str(&current_state_raw)
+        .upgrade(new_state)
+        .as_str()
+        .to_string();
 
-        if fname_str.starts_with("msgs_") && fname_str.ends_with(".json") {
-            let file_content = load_file(&user_dir, &fname_str);
-            if file_content.is_empty() {
-                continue;
-            }
+    conn.execute(
+        r#"
+        UPDATE messages
+        SET message_state = ?1
+        WHERE id = (
+            SELECT id
+            FROM messages
+            WHERE storage_owner = ?2
+              AND external_user = ?3
+              AND message_time = ?4
+            ORDER BY id DESC
+            LIMIT 1
+        )
+        "#,
+        params![upgraded, storage_owner, external_user, timestamp],
+    )
+    .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
 
-            if let Ok(mut chunk) = json::parse(&file_content) {
-                let mut modified = false;
-                for i in 0..chunk.len() {
-                    if chunk[i]["message_time"].as_i64() == Some(timestamp) {
-                        chunk[i]["message_state"] = JsonValue::from(
-                            MessageState::from_str(
-                                chunk[i]["message_state"].as_str().unwrap_or("SENDING"),
-                            )
-                            .upgrade(new_state.clone())
-                            .as_str(),
-                        );
-                        modified = true;
-                        break;
-                    }
-                }
-
-                if modified {
-                    save_file(&user_dir, &fname_str, &chunk.dump());
-                    break;
-                }
-            }
-        }
-    }
     Ok(())
 }
 
@@ -164,56 +187,105 @@ pub fn get_messages(
 ) -> JsonValue {
     let mut messages = array![];
 
-    let mut latest_chunk_index: i32 = -1;
-    let files = get_children(&format!("users/{}/chats/{}", storage_owner, external_user));
-
-    for entry in files {
-        if let Some(num) = {
-            entry
-                .strip_prefix("msgs_")
-                .and_then(|s| s.strip_suffix(".json"))
-        } {
-            if let Ok(index) = num.parse::<i32>() {
-                if index > latest_chunk_index {
-                    latest_chunk_index = index;
-                }
-            }
-        }
-    }
-
-    if latest_chunk_index == -1 {
+    if amount <= 0 || loaded_messages < 0 {
         return messages;
     }
 
-    let mut to_skip = loaded_messages;
-    let mut needed = amount;
+    let conn = match open_db() {
+        Ok(c) => c,
+        Err(e) => {
+            log!("Failed to open sqlite db for get_messages: {}", e);
+            return messages;
+        }
+    };
 
-    for chunk_index in (0..=latest_chunk_index).rev() {
-        if needed == 0 {
-            break;
+    let mut stmt = match conn.prepare(
+        r#"
+        SELECT
+            message_time,
+            content,
+            sent_by_self,
+            message_state
+        FROM messages
+        WHERE storage_owner = ?1
+          AND external_user = ?2
+        ORDER BY message_time DESC, id DESC
+        LIMIT ?3 OFFSET ?4
+        "#,
+    ) {
+        Ok(s) => s,
+        Err(e) => {
+            log!("Failed to prepare get_messages query: {}", e);
+            return messages;
         }
-        let file_name = format!("msgs_{}.json", chunk_index);
-        let file_content = load_file(
-            &format!("users/{}/chats/{}", storage_owner, external_user),
-            &file_name,
-        );
-        if file_content.is_empty() {
-            continue;
+    };
+
+    let rows = stmt.query_map(
+        params![storage_owner, external_user, amount, loaded_messages],
+        |row| {
+            let message_time: i64 = row.get(0)?;
+            let content: String = row.get(1)?;
+            let sent_by_self: i64 = row.get(2)?;
+            let message_state: String = row.get(3)?;
+            Ok((message_time, content, sent_by_self, message_state))
+        },
+    );
+
+    let Ok(rows) = rows else {
+        if let Err(e) = rows {
+            log!("Failed to query messages: {}", e);
         }
-        if let Ok(chunk) = json::parse(&file_content) {
-            for i in (0..chunk.len()).rev() {
-                if needed == 0 {
-                    break;
+        return messages;
+    };
+
+    for row in rows {
+        match row {
+            Ok((message_time, content, sent_by_self, message_state)) => {
+                let msg = object! {
+                    "message_time" => message_time,
+                    "content" => content,
+                    "sent_by_self" => (sent_by_self != 0),
+                    "message_state" => message_state
+                };
+
+                if let Err(e) = messages.push(msg) {
+                    log!("Failed to append message to output array: {}", e);
                 }
-                if to_skip > 0 {
-                    to_skip -= 1;
-                    continue;
-                }
-                messages.push(chunk[i].clone()).unwrap();
-                needed -= 1;
+            }
+            Err(e) => {
+                log!("Failed to read row from sqlite: {}", e);
             }
         }
     }
 
     messages
+}
+
+#[cfg(test)]
+mod tests {
+    use super::MessageState;
+
+    #[test]
+    fn upgrade_prefers_highest_state() {
+        assert_eq!(
+            MessageState::Sending.upgrade(MessageState::Sent),
+            MessageState::Sent
+        );
+        assert_eq!(
+            MessageState::Sent.upgrade(MessageState::Received),
+            MessageState::Received
+        );
+        assert_eq!(
+            MessageState::Received.upgrade(MessageState::Read),
+            MessageState::Read
+        );
+    }
+
+    #[test]
+    fn from_str_is_case_insensitive() {
+        assert_eq!(MessageState::from_str("READ"), MessageState::Read);
+        assert_eq!(MessageState::from_str("received"), MessageState::Received);
+        assert_eq!(MessageState::from_str("Sent"), MessageState::Sent);
+        assert_eq!(MessageState::from_str("unknown"), MessageState::Sending);
+    }
 }

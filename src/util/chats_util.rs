@@ -1,60 +1,134 @@
-use json::{self, JsonValue, array};
-
 use crate::users::contact::Contact;
-use crate::util::file_util::{load_file, save_file};
+use crate::util::file_util::get_directory;
+use json::{JsonValue, array};
+use rusqlite::{Connection, params};
+
+fn db_path() -> String {
+    format!("{}/messages.sqlite3", get_directory())
+}
+
+fn open_db() -> rusqlite::Result<Connection> {
+    let conn = Connection::open(db_path())?;
+    conn.execute_batch(
+        r#"
+        PRAGMA journal_mode = WAL;
+        PRAGMA synchronous = NORMAL;
+
+        CREATE TABLE IF NOT EXISTS contacts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            storage_owner INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            user_name TEXT,
+            last_message_at INTEGER,
+            UNIQUE(storage_owner, user_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_contacts_owner
+            ON contacts (storage_owner, last_message_at DESC, user_id ASC);
+        "#,
+    )?;
+    Ok(conn)
+}
 
 pub fn mod_user(storage_owner: i64, contact: &Contact) {
-    let dir: &str = &format!("users/{}/contacts/", storage_owner);
-    let s = load_file(dir, "contacts.json");
-
-    let mut contacts = if !s.is_empty() {
-        json::parse(&s).unwrap_or(array![])
-    } else {
-        array![]
+    let conn = match open_db() {
+        Ok(c) => c,
+        Err(_) => return,
     };
 
-    for i in 0..contacts.len() {
-        if contacts[i]["user_id"] == contact.user_id {
-            contacts.array_remove(i);
-            break;
-        }
-    }
-
-    contacts.push(contact.to_json()).unwrap();
-    save_file(&dir, "contacts.json", &contacts.dump());
+    let _ = conn.execute(
+        r#"
+        INSERT INTO contacts (
+            storage_owner,
+            user_id,
+            user_name,
+            last_message_at
+        ) VALUES (?1, ?2, ?3, ?4)
+        ON CONFLICT(storage_owner, user_id) DO UPDATE SET
+            user_name = excluded.user_name,
+            last_message_at = excluded.last_message_at
+        "#,
+        params![
+            storage_owner,
+            contact.user_id,
+            contact.user_name.clone(),
+            contact.last_message_at
+        ],
+    );
 }
 
 pub fn get_user(storage_owner: i64, user_id: i64) -> Option<Contact> {
-    let dir = format!("users/{}/contacts/", storage_owner);
-    let s = load_file(&dir, "contacts.json");
-    if s.is_empty() {
-        return None;
-    }
+    let conn = open_db().ok()?;
 
-    if let Ok(contacts) = json::parse(&s) {
-        for i in 0..contacts.len() {
-            if let Some(uid) = contacts[i]["user_id"].as_i64() {
-                if uid == user_id {
-                    return Option::from(Contact::from_json(&contacts[i]));
-                }
-            }
-        }
+    let row = conn.query_row(
+        r#"
+        SELECT user_id, user_name, last_message_at
+        FROM contacts
+        WHERE storage_owner = ?1 AND user_id = ?2
+        LIMIT 1
+        "#,
+        params![storage_owner, user_id],
+        |r| {
+            let user_id: i64 = r.get(0)?;
+            let user_name: Option<String> = r.get(1)?;
+            let last_message_at: Option<i64> = r.get(2)?;
+            Ok(Contact {
+                user_id,
+                user_name,
+                last_message_at,
+            })
+        },
+    );
+
+    match row {
+        Ok(contact) => Some(contact),
+        Err(rusqlite::Error::QueryReturnedNoRows) => None,
+        Err(_) => None,
     }
-    None
 }
 
 pub fn get_users(storage_owner: i64) -> JsonValue {
-    let dir: &str = &format!("users/{}/contacts/", storage_owner);
-    let s = load_file(dir, "contacts.json");
-
     let mut contacts_out = array![];
-    if !s.is_empty() {
-        if let Ok(contacts) = json::parse(&s) {
-            for i in 0..contacts.len() {
-                let c = Contact::from_json(&contacts[i]);
-                contacts_out.push(c.to_json()).unwrap();
-            }
+
+    let conn = match open_db() {
+        Ok(c) => c,
+        Err(_) => return contacts_out,
+    };
+
+    let mut stmt = match conn.prepare(
+        r#"
+        SELECT user_id, user_name, last_message_at
+        FROM contacts
+        WHERE storage_owner = ?1
+        ORDER BY
+            CASE WHEN last_message_at IS NULL THEN 1 ELSE 0 END,
+            last_message_at DESC,
+            user_id ASC
+        "#,
+    ) {
+        Ok(s) => s,
+        Err(_) => return contacts_out,
+    };
+
+    let rows = match stmt.query_map(params![storage_owner], |r| {
+        let user_id: i64 = r.get(0)?;
+        let user_name: Option<String> = r.get(1)?;
+        let last_message_at: Option<i64> = r.get(2)?;
+        Ok(Contact {
+            user_id,
+            user_name,
+            last_message_at,
+        })
+    }) {
+        Ok(r) => r,
+        Err(_) => return contacts_out,
+    };
+
+    for row in rows {
+        if let Ok(contact) = row {
+            let _ = contacts_out.push(contact.to_json());
         }
     }
+
     contacts_out
 }

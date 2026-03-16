@@ -604,12 +604,11 @@ impl OmikronConnection {
             let partner_id = cv.get_data(DataTypes::user_id).as_number().unwrap_or(0);
             let offset = cv.get_data(DataTypes::offset).as_number().unwrap_or(0);
             let amount = cv.get_data(DataTypes::amount).as_number().unwrap_or(0);
-            // let messages = chat_files::get_messages(my_id as i64, partner_id, offset, amount);
+            let messages = chat_files::get_messages(my_id as i64, partner_id, offset, amount);
             let resp = CommunicationValue::new(CommunicationType::messages_get)
                 .with_id(cv.get_id())
                 .with_receiver(my_id)
-                //.add_data(DataTypes::messages, messages)
-                ;
+                .add_data(DataTypes::messages, DataValue::Str(messages.dump()));
 
             self.send_message(&resp).await;
             return;
@@ -617,11 +616,11 @@ impl OmikronConnection {
 
         if cv.is_type(CommunicationType::get_chats) {
             let user_id = cv.get_sender();
-            let users = chats_util::get_users(user_id as i64).as_i64().unwrap();
+            let users = chats_util::get_users(user_id as i64);
             let resp = CommunicationValue::new(CommunicationType::get_chats)
                 .with_id(cv.get_id())
                 .with_receiver(user_id)
-                .add_data(DataTypes::user_ids, DataValue::Number(users));
+                .add_data(DataTypes::user_ids, DataValue::Str(users.dump()));
             self.send_message(&resp).await;
             return;
         }
